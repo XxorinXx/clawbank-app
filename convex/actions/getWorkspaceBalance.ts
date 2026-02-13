@@ -42,15 +42,12 @@ export const getWorkspaceBalance = action({
       { vaultAddress: workspace.vaultAddress },
     );
 
-    console.log("[balance] Raw balances:", JSON.stringify(balances));
-
     if (balances.length === 0) {
       return { totalUsd: 0, tokens: [] };
     }
 
     // Collect all mints
     const mints = balances.map((b: { mint: string }) => b.mint);
-    console.log("[balance] Mints to look up:", mints);
 
     // Fetch metadata and prices in parallel via internal actions
     const [metadata, prices] = await Promise.all([

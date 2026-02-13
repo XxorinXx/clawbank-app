@@ -87,23 +87,18 @@ async function fetchPricesFromJupiter(mints: string[]): Promise<TokenPrice[]> {
   const apiKey = getJupiterApiKey();
   try {
     const ids = mints.join(",");
-    const url = `https://api.jup.ag/price/v3?ids=${ids}`;
-    console.log("[prices] Fetching:", url);
-    const res = await fetch(url, {
+    const res = await fetch(`https://api.jup.ag/price/v3?ids=${ids}`, {
       headers: { "x-api-key": apiKey },
     });
-    console.log("[prices] Response status:", res.status);
     if (!res.ok) return [];
 
     const data = await res.json();
-    console.log("[prices] Raw response:", JSON.stringify(data).slice(0, 500));
     // v3 response is keyed directly by mint (no .data wrapper), with usdPrice field
     const prices: Record<string, { usdPrice?: number; price?: string }> = data ?? {};
     const results: TokenPrice[] = [];
 
     for (const mint of mints) {
       const entry = prices[mint];
-      console.log("[prices] Entry for", mint, ":", JSON.stringify(entry));
       const price = entry?.usdPrice ?? (entry?.price ? parseFloat(entry.price) : undefined);
       if (price !== undefined) {
         results.push({ mint, priceUsd: price });
@@ -111,8 +106,7 @@ async function fetchPricesFromJupiter(mints: string[]): Promise<TokenPrice[]> {
     }
 
     return results;
-  } catch (err) {
-    console.log("[prices] Error:", err);
+  } catch {
     return [];
   }
 }
