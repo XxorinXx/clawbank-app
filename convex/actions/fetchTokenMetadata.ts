@@ -107,20 +107,16 @@ async function fetchFromJupiter(mints: string[]): Promise<TokenMetadata[]> {
   for (const mint of mints) {
     try {
       const url = `https://api.jup.ag/tokens/v2/search?query=${mint}`;
-      console.log("[metadata] Fetching:", url);
       const res = await fetch(url, {
         headers: { "x-api-key": apiKey },
       });
-      console.log("[metadata] Response status:", res.status);
       if (!res.ok) continue;
 
       const data = await res.json();
-      console.log("[metadata] Raw response for", mint, ":", JSON.stringify(data).slice(0, 500));
       const tokens = Array.isArray(data) ? data : [];
       const match = tokens.find(
         (t: { id?: string }) => t.id === mint,
       );
-      console.log("[metadata] Match found:", match ? "yes" : "no");
 
       if (match) {
         results.push({
@@ -131,8 +127,8 @@ async function fetchFromJupiter(mints: string[]): Promise<TokenMetadata[]> {
           decimals: typeof match.decimals === "number" ? match.decimals : 0,
         });
       }
-    } catch (err) {
-      console.log("[metadata] Error fetching", mint, ":", err);
+    } catch {
+      // Skip failed fetches, will be stored as UNKNOWN
     }
   }
 

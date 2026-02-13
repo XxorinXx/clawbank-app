@@ -122,13 +122,6 @@ export const createWorkspace = action({
     // Sign with sponsor (payer) and createKey
     tx.sign([sponsorKeypair, createKey]);
 
-    // Log base64 transaction for Solana Explorer / inspector debugging
-    const serialized = tx.serialize();
-    const txBase64 = Buffer.from(serialized).toString("base64");
-    console.log("Sponsor pubkey:", sponsorKeypair.publicKey.toBase58());
-    console.log("Multisig PDA:", multisigPda.toBase58());
-    console.log("Transaction (base64):", txBase64);
-
     // Send and confirm the transaction
     let signature: string;
     try {
