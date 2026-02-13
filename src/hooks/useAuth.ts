@@ -7,11 +7,12 @@ interface AuthState {
   isLoading: boolean
   login: () => void
   logout: () => Promise<void>
+  exportWallet: () => Promise<void>
 }
 
 export function useAuth(): AuthState {
   const { ready, authenticated, user, login, logout } = usePrivy()
-  const { ready: walletsReady, wallets } = useSolanaWallets()
+  const { ready: walletsReady, wallets, exportWallet } = useSolanaWallets()
 
   const isLoading = !ready || !walletsReady
 
@@ -28,6 +29,9 @@ export function useAuth(): AuthState {
     login,
     logout: async () => {
       await logout()
+    },
+    exportWallet: async () => {
+      await exportWallet()
     },
   }
 }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { useConvexAuth } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { Plus, LogOut, Globe, X } from 'lucide-react'
+import { Plus, LogOut, Globe, X, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { CreateWorkspaceModal } from '~/components/CreateWorkspaceModal'
 import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
@@ -37,7 +37,7 @@ function formatDate(timestamp: number): string {
 }
 
 function WorkspacesPage() {
-  const { isAuthenticated, isLoading, userEmail, walletAddress, logout } =
+  const { isAuthenticated, isLoading, userEmail, walletAddress, logout, exportWallet } =
     useAuth()
   const navigate = useNavigate()
   const { isAuthenticated: isConvexAuthenticated } = useConvexAuth()
@@ -99,6 +99,15 @@ function WorkspacesPage() {
               Create workspace
             </motion.button>
           )}
+          <motion.button
+            className="flex cursor-pointer items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => void exportWallet()}
+          >
+            <KeyRound size={16} />
+            Export Wallet
+          </motion.button>
           <motion.button
             className="flex cursor-pointer items-center gap-2 rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200"
             whileHover={{ scale: 1.02 }}
