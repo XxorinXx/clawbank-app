@@ -20,7 +20,7 @@ export const createWorkspace = action({
       }),
     ),
   },
-  handler: async (ctx, args): Promise<{ workspaceId: string; multisigAddress: string }> => {
+  handler: async (ctx, args): Promise<{ workspaceId: string; multisigAddress: string; vaultAddress: string }> => {
     // Auth check
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -151,6 +151,8 @@ export const createWorkspace = action({
     }
 
     const multisigAddress = multisigPda.toBase58();
+    const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
+    const vaultAddress = vaultPda.toBase58();
     const now = Date.now();
 
     // Store workspace, members, and invites in Convex
@@ -159,8 +161,8 @@ export const createWorkspace = action({
       {
         name: trimmedName,
         multisigAddress,
+        vaultAddress,
         creatorTokenIdentifier: identity.tokenIdentifier,
-        network: "mainnet" as const,
         createdAt: now,
         members: [
           {
@@ -178,6 +180,6 @@ export const createWorkspace = action({
       },
     );
 
-    return { workspaceId, multisigAddress };
+    return { workspaceId, multisigAddress, vaultAddress };
   },
 });

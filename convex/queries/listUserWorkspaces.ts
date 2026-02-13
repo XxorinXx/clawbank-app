@@ -4,8 +4,7 @@ import { Doc, Id } from "../_generated/dataModel";
 type WorkspaceSummary = {
   _id: Id<"workspaces">;
   name: string;
-  multisigAddress: string;
-  network: "mainnet";
+  vaultAddress: string;
   createdAt: number;
 };
 
@@ -64,8 +63,7 @@ export const listUserWorkspaces = query({
     return allWorkspaces.map((ws) => ({
       _id: ws._id,
       name: ws.name,
-      multisigAddress: ws.multisigAddress,
-      network: ws.network,
+      vaultAddress: ws.vaultAddress,
       createdAt: ws.createdAt,
     }));
   },

@@ -1,194 +1,121 @@
-# STORY: 001B Privy Auth + Convex User + Workspace View
+# STORY: 001D Workspace Balance Engine (data only)
 
 ## Team Deployment
 
-Lead must:
+Deploy Claude Code Agent Team (delegate mode ON):
 
-1. Deploy Claude Code Agent Team:
-   - lead (delegate mode ON)
-   - pmux
-   - frontend
-   - backend
-   - qa
-2. Use shared task list.
-3. Execute only this story until DONE.
+- Lead
+- Backend
+- Frontend
+- QA
+
+PM/UX not required.
+
+Use shared task list.
+Execute only this story until DONE.
 
 ## Skills enabled
 
 Backend:
 
-- https://skills.sh/waynesutton/convexskills/convex
+- https://skills.sh/solana-foundation/solana-dev-skill/solana-dev
 - https://skills.sh/waynesutton/convexskills/convex-best-practices
-- https://skills.sh/waynesutton/convexskills/convex-schema-validator
-- https://skills.sh/waynesutton/convexskills/convex-eslint
+- https://skills.sh/waynesutton/convexskills/convex-functions
+- https://skills.sh/waynesutton/convexskills/convex-realtime
+
+Jupiter API links :
+https://dev.jup.ag/api-reference/tokens/v2/search
+https://dev.jup.ag/api-reference/price/v3/price
 
 Frontend:
 
-- https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
 - https://skills.sh/jezweb/claude-skills/tanstack-query
-- https://skills.sh/jezweb/claude-skills/tanstack-router
-- https://skills.sh/jezweb/claude-skills/tailwind-v4-shadcn
-- https://skills.sh/nextlevelbuilder/ui-ux-pro-max-skill/ui-ux-pro-max
 
-QA:
+## Scope (must)
 
-- none
+### Backend — token balance pipeline
 
-## Inputs (only allowed files)
+Implement deterministic balance engine:
 
-- docs/PRD.md
-- docs/ACCEPTANCE.md
-- AGENTS/\*
-- scripts/checks.sh
-- existing frontend scaffold from 001A
+1. Fetch token balances using our RPC(please set env for rpc url).
+2. Fetch token metadata from Jupiter API.
+3. Fetch token prices from Jupiter API.
+4. Add **Convex action caching**:
+   - metadata cache
+   - price cache
+   - TTL-based invalidation
+5. Compute:
+   - per-token USD value
+   - total workspace USD balance.
 
-Workspaces empty state (Frontend)
+Backend must expose **one query**:
 
-On /workspaces, when user has no workspaces, show a centered container:
+getWorkspaceBalance(workspaceId) →  
+returns:
 
-rectangle “card” with plus icon field
+- totalUsd
+- tokens[]:
+  - mint
+  - symbol
+  - name
+  - icon
+  - amount
+  - usdValue
 
-warm welcoming title + subtitle
+Schema design is **backend responsibility**:
 
-Two buttons:
+- must support fast future queries
+- must be indexed properly
+- do not over-normalize.
 
-Primary: “Create workspace”
+Backend may also expose internal cached endpoints for:
 
-Secondary text button: “Import workspace”
+- metadata
+- prices
 
-for now shows toast: “Coming soon”
+These must use Convex action caching with TTL and must not be called from the client directly (only via hooks).
+should aim to reduce api calls and convex usage gb\hr
 
-Create Workspace modal (Frontend)
+### Frontend — minimal wiring only (Suspense + hooks)
 
-Primary opens modal with 2-step flow and motion transition:
+- Use TanStack Query **useSuspenseQuery** (or useQuery with suspense enabled) for data loading.
+- Do not call Convex directly from components. Expose hooks in `src/hooks/`:
 
-Step 1: workspace name
+Hooks required:
 
-Step 2: add human members UI (email OR wallet)
+1. `useWorkspaceBalance(workspaceId)`
+   - returns: `{ totalUsd, tokens }` (from backend query)
+2. `useTokenMetadata(mints[])`
+   - returns: metadata map keyed by mint
+   - uses cached backend action/query (not direct Jupiter from client)
+3. `useTokenPrices(mints[])`
+   - returns: price map keyed by mint
+   - uses cached backend action/query (not direct Jupiter from client)
 
-add/remove members
+- Workspace page renders a temporary JSON/debug view using these hooks.
+- No design, animation, modal yet.
 
-basic validation (invalid email/wallet inline)
+### QA
 
-Final CTA: “Create workspace”
+Verify:
 
-calls backend to create a real Squads multisig (dev/testing)
+- RPC failure handled deterministically.
+- Missing metadata handled.
+- Zero-balance workspace handled.
+- Caching actually used (no repeated external calls).
 
-Convex auth wiring (Frontend)
+## Out of scope (must not)
 
-Use existing ConvexProvider + PrivyProvider
+- Token icons UI
+- Animated numbers
+- Modal list
+- Send button
+- Any new layout design
 
-Ensure Convex calls are authenticated via Privy access token
+## Done Conditions
 
-Backend (Convex + Squads + Solana)
-
-Backend must implement Create Workspace end-to-end:
-
-Accept: workspace name + member list (email/wallet)
-
-Resolve member identities for multisig creation:
-
-Wallet entries are used directly
-
-Email entries are stored as “invited/pending” (no on-chain member unless it has a wallet)
-
-Create Squads multisig using:
-
-@sqds/multisig
-
-@solana/web3.js ^1.98.4
-
-@solana/spl-token (only if needed)
-
-Use sponsor private key from Convex env to pay fees and sign sponsor-required instructions.
-
-Must store enough data to support:
-
-querying user workspaces
-
-querying workspace members
-
-later activity/requests indexing
-
-Backend designs schema for good indexing/querying (no schema dictated here), but must include:
-
-workspace identity (multisig address)
-
-creator user reference
-
-members/invites
-
-timestamps
-
-network/cluster (mainnet only)
-
-Security constraints (even for testing)
-
-Never log the sponsor key.
-
-Never return sponsor key to frontend.
-
-Rate limit / basic abuse guard: one workspace creation per user per N seconds (simple).
-
-Fail with explicit errors (deterministic).
-
-QA (must)
-
-Run ./scripts/checks.sh
-
-Edge cases ≥ 3:
-
-empty name
-
-invalid wallet
-
-duplicate members
-
-Security checks ≥ 2:
-
-create-workspace endpoint requires auth
-
-sponsor key never logged/exposed
-
-Verify happy-path:
-
-modal flow works
-
-clicking “Create workspace” results in a multisig address displayed/stored and user sees the new workspace
-
-Out of scope (must not)
-
-Import workspace logic (still toast only)
-
-Spending limits configuration UX
-
-Agent wallets / Turnkey agent integration
-
-Transaction requests/approvals UI
-
-Advanced multisig config beyond minimal viable
-
-UX + Acceptance (objective)
-
-Empty state container renders and feels welcoming
-
-Secondary text button shows “Coming soon”
-
-Modal 2-step motion works
-
-Members add/remove + validation works
-
-Create workspace succeeds and results in:
-
-workspace appears in /workspaces
-
-shows multisig address (and basic metadata)
-
-Checks pass; QA notes written; DONE marker written
-
-- lint passes
-- typecheck passes
-- build passes
-- tests pass or explicitly recorded
-- QA notes written
-- `DONE: 001C` written to docs/PROGRESS.md
+- lint/typecheck/build/tests pass
+- caching confirmed working
+- totalUsd correct for sample workspace
+- QA edge/security notes written
+- DONE: 001D written to docs/PROGRESS.md

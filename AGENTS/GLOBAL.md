@@ -4,6 +4,8 @@ GOAL: Ship ClawBank v1 vertical slices deterministically. Repo files are the onl
 
 NETWORK POLICY: Mainnet only (Solana mainnet-beta). No devnet, no testnet, no localnet. All on-chain operations, RPC calls, and stored network values must use mainnet.
 
+PRIVY POLICY: We use Privy v2 (@privy-io/react-auth ^2.25.0). Do NOT use v3 or import from @privy-io/react-auth/solana (v3 submodule). All Solana wallet hooks come from the top-level @privy-io/react-auth import (e.g. useSolanaWallets). Never add @solana-program/* or @solana/kit packages.
+
 RULES
 
 - Minimal context: read only files listed in "Inputs" for the current story.

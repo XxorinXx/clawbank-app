@@ -9,7 +9,14 @@
  */
 
 import type * as actions_createWorkspace from "../actions/createWorkspace.js";
+import type * as actions_fetchTokenBalances from "../actions/fetchTokenBalances.js";
+import type * as actions_fetchTokenMetadata from "../actions/fetchTokenMetadata.js";
+import type * as actions_fetchTokenPrices from "../actions/fetchTokenPrices.js";
+import type * as actions_getTokenMetadata from "../actions/getTokenMetadata.js";
+import type * as actions_getTokenPrices from "../actions/getTokenPrices.js";
+import type * as actions_getWorkspaceBalance from "../actions/getWorkspaceBalance.js";
 import type * as env from "../env.js";
+import type * as internals_cacheHelpers from "../internals/cacheHelpers.js";
 import type * as internals_workspaceHelpers from "../internals/workspaceHelpers.js";
 import type * as queries_getWorkspaceMembers from "../queries/getWorkspaceMembers.js";
 import type * as queries_listUserWorkspaces from "../queries/listUserWorkspaces.js";
@@ -23,7 +30,14 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/createWorkspace": typeof actions_createWorkspace;
+  "actions/fetchTokenBalances": typeof actions_fetchTokenBalances;
+  "actions/fetchTokenMetadata": typeof actions_fetchTokenMetadata;
+  "actions/fetchTokenPrices": typeof actions_fetchTokenPrices;
+  "actions/getTokenMetadata": typeof actions_getTokenMetadata;
+  "actions/getTokenPrices": typeof actions_getTokenPrices;
+  "actions/getWorkspaceBalance": typeof actions_getWorkspaceBalance;
   env: typeof env;
+  "internals/cacheHelpers": typeof internals_cacheHelpers;
   "internals/workspaceHelpers": typeof internals_workspaceHelpers;
   "queries/getWorkspaceMembers": typeof queries_getWorkspaceMembers;
   "queries/listUserWorkspaces": typeof queries_listUserWorkspaces;
