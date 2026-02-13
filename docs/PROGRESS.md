@@ -136,3 +136,38 @@ Decision written in docs/DECISIONS.md: "Member removal flow v1"
 - **Remove member flow**: Squads configTransactionCreate proposal → auto-approve (threshold=1) → DB reconciliation. All states surfaced to user.
 
 DONE: 001F
+
+## 0020 QA Notes
+
+### Story type: Architecture only (no code changes)
+
+### Deliverables
+
+1. **docs/ARCH_AGENT_CONNECT.md** (428 lines) — Full architecture spec with all 9 required sections:
+   - Goals/non-goals, trust boundaries + threat model, component descriptions
+   - Data model: agents, agent_sessions, spending_limits, activity_log (conceptual, no schema changes)
+   - 6 end-to-end flows (F1-F6): Add Agent → Turnkey wallet → Squads binding → auth → spend → over-limit
+   - API contracts: 11 Convex mutations/queries/actions with inputs/outputs/auth
+   - Key management + rotation plan
+   - Spending limits enforcement (backend + on-chain dual-gate)
+   - Failure modes: Turnkey down, RPC down, stale limits, replay prevention
+
+2. **docs/AGENT_INSTALL.md** — Installation + bootstrap plan:
+   - 3 supported runtimes (OpenClaw, Claude Code, generic headless)
+   - Environment variables, install steps, connect code exchange flow
+   - Session token lifecycle (JWT, 30-day expiry, refresh, revocation)
+
+3. **docs/UX_AGENT_CONNECT.md** — UI microcopy/spec:
+   - Add Agent button placements (Agents tab, header, empty state)
+   - 4-step modal flow (Name & Type → Budget → Connect Code → Success)
+   - Post-success agent row display, error messages, empty states
+
+4. **docs/SECURITY_AGENT_CONNECT.md** — Security review checklist:
+   - 5 sections, 25+ checklist items
+   - Secret handling, auth + replay prevention, least privilege, rate limiting, demo protection
+
+### Team execution
+
+4 agents spawned in parallel (architect, backend, pmux, qa) — each wrote its deliverable independently. All completed successfully.
+
+DONE: 0020
