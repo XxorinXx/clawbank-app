@@ -40,4 +40,19 @@ export default defineSchema({
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_email", ["email"]),
+
+  token_metadata_cache: defineTable({
+    mint: v.string(),
+    symbol: v.string(),
+    name: v.string(),
+    icon: v.optional(v.string()),
+    decimals: v.number(),
+    updatedAt: v.number(),
+  }).index("by_mint", ["mint"]),
+
+  token_price_cache: defineTable({
+    mint: v.string(),
+    priceUsd: v.number(),
+    updatedAt: v.number(),
+  }).index("by_mint", ["mint"]),
 });

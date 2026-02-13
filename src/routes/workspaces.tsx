@@ -5,9 +5,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { useConvexAuth } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { Plus, LogOut, Globe } from 'lucide-react'
+import { Plus, LogOut, Globe, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { CreateWorkspaceModal } from '~/components/CreateWorkspaceModal'
+import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
+import { Id } from '../../convex/_generated/dataModel'
 
 export const Route = createFileRoute('/workspaces')({
   component: WorkspacesPage,
@@ -42,6 +44,7 @@ function WorkspacesPage() {
   const getOrCreateUser = useMutation(api.users.getOrCreateUser)
   const didSync = useRef(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<Id<"workspaces"> | null>(null)
 
   const workspaces = useQuery(
     api.queries.listUserWorkspaces.listUserWorkspaces,
@@ -123,7 +126,7 @@ function WorkspacesPage() {
                 className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-5 transition-colors hover:border-gray-200 hover:bg-gray-50"
                 whileHover={{ scale: 1.005 }}
                 whileTap={{ scale: 0.995 }}
-                onClick={() => toast('Workspace detail view coming soon')}
+                onClick={() => setSelectedWorkspaceId(ws._id as Id<"workspaces">)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
@@ -194,10 +197,57 @@ function WorkspacesPage() {
         </div>
       )}
 
+      {/* Debug balance panel */}
+      {selectedWorkspaceId && (
+        <BalanceDebugPanel
+          workspaceId={selectedWorkspaceId}
+          onClose={() => setSelectedWorkspaceId(null)}
+        />
+      )}
+
       <CreateWorkspaceModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
       />
+    </div>
+  )
+}
+
+function BalanceDebugPanel({
+  workspaceId,
+  onClose,
+}: {
+  workspaceId: Id<"workspaces">
+  onClose: () => void
+}) {
+  const { data, isLoading, error } = useWorkspaceBalance(workspaceId)
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+      <div className="relative max-h-[80vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-6 shadow-xl">
+        <button
+          className="absolute right-4 top-4 cursor-pointer rounded-full p-1 text-gray-400 hover:text-gray-600"
+          onClick={onClose}
+        >
+          <X size={20} />
+        </button>
+        <h3 className="mb-4 text-lg font-bold text-gray-900">
+          Balance Debug View
+        </h3>
+        {isLoading && (
+          <p className="text-sm text-gray-500">Loading balances...</p>
+        )}
+        {error && (
+          <p className="text-sm text-red-500">
+            Error: {error instanceof Error ? error.message : 'Unknown error'}
+          </p>
+        )}
+        {data && (
+          <pre className="whitespace-pre-wrap break-all rounded-xl bg-gray-50 p-4 text-xs text-gray-700">
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        )}
+      </div>
     </div>
   )
 }

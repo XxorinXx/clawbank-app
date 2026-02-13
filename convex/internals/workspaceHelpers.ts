@@ -31,6 +31,13 @@ export const getUserByToken = internalQuery({
   },
 });
 
+export const getWorkspaceById = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args): Promise<Doc<"workspaces"> | null> => {
+    return await ctx.db.get(args.workspaceId);
+  },
+});
+
 export const storeWorkspace = internalMutation({
   args: {
     name: v.string(),

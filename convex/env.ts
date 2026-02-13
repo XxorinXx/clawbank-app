@@ -14,6 +14,10 @@ export function getPrivyAppId(): string {
   return requireEnv("PRIVY_APP_ID");
 }
 
+export function getRpcUrl(): string {
+  return requireEnv("RPC_URL");
+}
+
 /**
  * Returns the sponsor private key bytes decoded from bs58.
  * NEVER log, return to client, or include in error messages.
