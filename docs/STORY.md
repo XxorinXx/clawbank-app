@@ -1,158 +1,127 @@
-# STORY: 001F Drawer Tabs + Members Tab
+# STORY: 0020 Agent Connection Architecture (Turnkey + Workspace Binding)
 
 ## Team Deployment
 
 Deploy Claude Code Agent Team (delegate mode ON):
 
-- Lead
+- Lead / Architect
 - PM/UX
-- Frontend
 - Backend
 - QA
 
-Use shared task list.
+Frontend not required (only minimal UI notes).
+
 Execute only this story until DONE.
-
-## Skills enabled
-
-Backend:
-
-- https://skills.sh/solana-foundation/solana-dev-skill/solana-dev
-- https://skills.sh/sendaifun/skills/squads
-
-Frontend:
-
-- https://skills.sh/nextlevelbuilder/ui-ux-pro-max-skill/ui-ux-pro-max
-- https://skills.sh/jezweb/claude-skills/tailwind-v4-shadcn
-- https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
-
-PM/UX:
-
-- https://skills.sh/nextlevelbuilder/ui-ux-pro-max-skill/ui-ux-pro-max
 
 ## Inputs (only allowed files)
 
 - docs/OVERVIEW.md
-- docs/PRD.md
-- docs/ACCEPTANCE.md
+- docs/Potential_Architecture.md (uploaded)
 - AGENTS/\*
-- scripts/checks.sh
-- existing workspace + auth + balance hooks
+- existing repo code (read-only, no implementation required)
 
 ## Scope (must)
 
-### Gate 0 — Flow agreement (must be done first, inside this story)
+Architecture + design only. No implementation. No SDK build.
 
-PM/UX + Backend must write a short decision in docs/DECISIONS.md:
+### Deliverable A — Architecture spec file (required)
 
-- “Member removal flow v1”
-- includes:
-  - what happens on delete (proposal creation vs direct)
-  - what data is required
-  - what UI states exist (idle, confirming, submitting, pending, success, error)
+Create docs/ARCH_AGENT_CONNECT.md with:
 
-Frontend must not implement destructive on-chain changes until this decision exists.
+1. Goals + non-goals (v1)
+2. Trust boundaries + threat model (short)
+3. Components:
+   - Web App
+   - Convex (DB + functions)
+   - "Signing & Policy Service" (Convex actions)
+   - Turnkey (agent wallet custody/sign)
+   - Squads (multisig + spending limits)
+   - Agent Runtime (OpenClaw / Claude Code / headless bot)
+4. Data model (conceptual):
+   - workspace
+   - agent
+   - agentWallet
+   - agentSession / agentToken
+   - spendingLimit binding
+   - audit log / activity
+     (Do not change DB schema in code; just describe entities + indexes needed.)
+5. End-to-end flows (sequence steps):
+   F1) Add Agent (human clicks "Add agent")
+   F2) Create Turnkey wallet (or alternative) and store pubkey
+   F3) Bind agent to workspace (DB + on-chain membership)
+   F4) Install/run agent runtime and authenticate to workspace
+   F5) Agent requests spend (tx intent) -> policy gate -> sign -> broadcast
+   F6) Over-limit path -> proposal created -> humans approve
+6. API contracts (Convex):
+   - mutations/queries/actions names + inputs/outputs
+   - auth requirements for each
+7. Key management:
+   - what secrets live where (Convex env, agent runtime env)
+   - rotation story
+8. Spending limits enforcement plan:
+   - what is enforced in Squads vs backend policy gate
+   - how to prevent bypass (agent cannot sign directly)
+9. Failure modes + deterministic recovery:
+   - Turnkey down
+   - RPC down
+   - stale spending limits
+   - replay prevention for agent requests
 
-### A) Reusable drawer tab navigation component (Frontend)
+### Deliverable B — Installation + bootstrap plan (required)
 
-Build a reusable Tabs component for drawer layout:
+Create docs/AGENT_INSTALL.md with:
 
-- Plain text tabs, clickable
-- Active tab: black text
-- Inactive: grey text
-- Scalable: supports arbitrary number of tabs, icons optional, keyboard accessible
-- API must support:
-  - items: { key, label, icon? }
-  - activeKey
-  - onChange(key)
-  - optional rightSlot/headerSlot
-- Tab content renders below tabs (children or render function)
-- No hardcoded tabs inside component (must be reusable)
+- Supported runtimes (OpenClaw / Claude Code)
+- What runs where (user machine vs VPS)
+- Install steps (high-level, deterministic)
+- Required environment variables
+- How workspace connection happens:
+  - one-time connect code / link / JWT / signed challenge
+  - how agent proves control of Turnkey wallet (or proves identity)
 
-### B) Tabs placeholders (Frontend)
+### Deliverable C — Minimal UI microcopy/spec (required)
 
-Create placeholder tabs for the sections from docs/OVERVIEW.md:
+PM/UX writes docs/UX_AGENT_CONNECT.md:
 
-- Each tab shows placeholder content (icon + short label underneath)
-- No extra logic beyond placeholders
+- Add Agent button placement
+- Modal steps (just text, no design)
+- What user sees after success (agent status, budget, last activity)
+- Error messages and empty states
 
-### C) Members tab (Frontend + Backend)
+### Deliverable D — Security review checklist (required)
 
-Members tab must be fully implemented.
+QA writes docs/SECURITY_AGENT_CONNECT.md:
 
-UI:
+- checklist for secret handling + logging
+- auth + replay prevention
+- principle of least privilege
+- abuse/rate limiting
+- “happy-path demo protection” rules
 
-- List rows, each row shows:
-  - user icon inside grey container (avatar placeholder ok)
-  - name to the right
-  - under name: roles list (approve/vote/execute etc). If multiple, show multiple.
-  - far right:
-    - Delete icon button (destructive)
-    - Manage button (text inside container)
-- If member is the only one:
-  - Manage is disabled (greyed, not clickable)
-  - Delete button is not rendered
-- Add Member button somewhere in the tab (stub, no action)
+## Constraints
 
-Data strategy (deterministic):
-
-1. Render immediately from DB members list.
-2. Fetch on-chain members in parallel.
-3. When on-chain returns:
-   - merge/overlay roles + membership (prefer on-chain truth)
-   - if DB is stale, update DB (backend responsibility)
-   - re-render with updated dataset
-4. Must avoid flicker: preserve stable ordering and show subtle “syncing” state.
-
-Backend responsibilities:
-
-- Provide query: getWorkspaceMembers(workspaceId) -> DB members
-- Provide action/query: fetchWorkspaceMembersOnchain(workspaceId) -> on-chain members
-- Provide mutation: reconcileMembersFromOnchain(workspaceId, onchainMembers) -> updates DB if needed
-
-### D) Delete member (UI + proposal stub)
-
-- Delete button opens confirmation modal:
-  - title + short explanation
-  - Cancel + Confirm buttons
-- On confirm:
-  - Execute the “member removal flow v1” from docs/DECISIONS.md
-  - If flow is proposal-based:
-    - create proposal (or stub if backend says not ready)
-  - UI must show pending state and success/error deterministically
-
-Hard rule:
-
-- No silent failures. Show explicit error UI.
+- Must align with product overview agent model:
+  - Turnkey agent wallet
+  - added as Squads member
+  - spending limits gating autonomy
+- Must align with architecture trust boundaries diagram:
+  - Convex as coordination
+  - server-side policy/signing service calls Turnkey sign and RPC broadcast
+- Must be detailed enough that next implementation story is trivial.
 
 ## Out of scope (must not)
 
-- Add member functionality (button is stub)
-- Spending limits UI
-- Agents tab functionality
-- Full approval/voting UI beyond placeholder
-
-## QA requirements
-
-- Run ./scripts/checks.sh
-- Edge cases ≥ 5:
-  - 0 members (should not happen, handle anyway)
-  - 1 member (disable manage, hide delete)
-  - DB vs on-chain mismatch (reconcile)
-  - on-chain fetch fails (fallback to DB + warning)
-  - delete confirm cancel + confirm flows
-- Security checks ≥ 3:
-  - auth gating for member queries/actions
-  - destructive action requires confirmation
-  - no secrets/logging of keys
+- Implement Turnkey SDK integration
+- Implement Add Agent UI
+- Implement proposal creation
+- Implement spending limit creation
+- Any code changes besides new docs files
 
 ## Done Conditions
 
-- Gate 0 decision written in docs/DECISIONS.md
-- Tabs component reusable and used in drawer
-- Placeholder tabs rendered
-- Members tab implemented with DB-first then on-chain overlay + reconcile
-- Delete modal implemented; delete triggers flow per decision (proposal or stub)
-- lint/typecheck/build/tests pass
-- QA notes written
-- DONE: 001F written to docs/PROGRESS.md
+- docs/ARCH_AGENT_CONNECT.md created
+- docs/AGENT_INSTALL.md created
+- docs/UX_AGENT_CONNECT.md created
+- docs/SECURITY_AGENT_CONNECT.md created
+- QA review notes included
+- DONE: 0020 written to docs/PROGRESS.md
