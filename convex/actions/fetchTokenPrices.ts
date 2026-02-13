@@ -3,6 +3,7 @@
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
+import { getJupiterApiKey } from "../env";
 
 const PRICE_TTL_MS = 60 * 1000; // 60 seconds
 
@@ -83,27 +84,35 @@ export const fetchTokenPrices = internalAction({
 });
 
 async function fetchPricesFromJupiter(mints: string[]): Promise<TokenPrice[]> {
+  const apiKey = getJupiterApiKey();
   try {
     const ids = mints.join(",");
-    const res = await fetch(`https://api.jup.ag/price/v2?ids=${ids}`);
+    const url = `https://api.jup.ag/price/v3?ids=${ids}`;
+    console.log("[prices] Fetching:", url);
+    const res = await fetch(url, {
+      headers: { "x-api-key": apiKey },
+    });
+    console.log("[prices] Response status:", res.status);
     if (!res.ok) return [];
 
     const data = await res.json();
-    const prices: Record<string, { price?: string }> = data?.data ?? {};
+    console.log("[prices] Raw response:", JSON.stringify(data).slice(0, 500));
+    // v3 response is keyed directly by mint (no .data wrapper), with usdPrice field
+    const prices: Record<string, { usdPrice?: number; price?: string }> = data ?? {};
     const results: TokenPrice[] = [];
 
     for (const mint of mints) {
       const entry = prices[mint];
-      if (entry?.price) {
-        results.push({
-          mint,
-          priceUsd: parseFloat(entry.price),
-        });
+      console.log("[prices] Entry for", mint, ":", JSON.stringify(entry));
+      const price = entry?.usdPrice ?? (entry?.price ? parseFloat(entry.price) : undefined);
+      if (price !== undefined) {
+        results.push({ mint, priceUsd: price });
       }
     }
 
     return results;
-  } catch {
+  } catch (err) {
+    console.log("[prices] Error:", err);
     return [];
   }
 }
