@@ -69,7 +69,7 @@ export function useWorkspaceMembers(workspaceId: Id<"workspaces"> | null) {
 
     // Add on-chain members not yet in DB
     if (onchainQuery.data) {
-      const dbWallets = new Set(dbData.members.map((m) => m.walletAddress));
+      const dbWallets = new Set(dbData.members.map((m: { walletAddress: string }) => m.walletAddress));
       for (const onchain of onchainQuery.data) {
         if (!dbWallets.has(onchain.pubkey)) {
           members.push({

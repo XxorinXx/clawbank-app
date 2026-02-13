@@ -3,35 +3,24 @@
 ## The Short Version
 
 ```bash
-npx @clawbank/cli
+node scripts/agent-connect.mjs YOUR_CODE
 ```
 
-That's it. The CLI walks you through everything.
+That's it. The script connects your agent and saves everything to `.env`.
 
 ---
 
 ## What Happens When You Run It
 
-The CLI is fully interactive. It asks you one question at a time, in plain English. No config files to write, no environment variables to hunt down.
+The script is a single command. Give it your connect code and it handles the rest.
 
 ```
-$ npx @clawbank/cli
+$ node scripts/agent-connect.mjs A3F9K2
 
-  Welcome to ClawBank 🐾
-
-  ? Do you have a connect code? (You get this from the ClawBank app)
-  > Yes
-
-  ? Paste your connect code:
-  > A3F9K2
+  ClawBank Agent Connect
 
   ✓ Code verified
-  ✓ Wallet created
-  ✓ Connected to workspace "My Team Treasury"
-
-  ? Where should we save your config?
-  > .env (recommended)
-
+  ✓ Connected to workspace
   ✓ Saved to .env
 
   You're all set! Your agent is connected.
@@ -41,7 +30,20 @@ $ npx @clawbank/cli
     node my-agent.js         # if using a custom bot
 ```
 
-Every step shows a clear result (✓ or ✗). If something fails, the CLI tells you exactly what went wrong and what to do about it.
+If you don't pass a code as an argument, the script prompts you:
+
+```
+$ node scripts/agent-connect.mjs
+
+  ClawBank Agent Connect
+
+  ? Paste your connect code: A3F9K2
+
+  ✓ Code verified
+  ...
+```
+
+Every step shows a clear result (✓ or ✗). If something fails, it tells you exactly what went wrong.
 
 ---
 
@@ -51,26 +53,29 @@ Every step shows a clear result (✓ or ✗). If something fails, the CLI tells 
 
 A human opens the ClawBank web app, goes to their workspace, and clicks **"Connect Agent"**. The app shows a 6-character code (e.g. `A3F9K2`). They give you this code. It expires in 5 minutes.
 
-### 2. Run the CLI
+### 2. Run the Connect Script
+
+From the ClawBank repo root:
 
 ```bash
-npx @clawbank/cli
+node scripts/agent-connect.mjs A3F9K2
 ```
 
-No global install needed. `npx` downloads and runs it directly.
+Or interactively:
 
-### 3. Paste the Code
+```bash
+node scripts/agent-connect.mjs
+```
 
-The CLI asks for your connect code. Paste it. The CLI does the rest:
+The script:
 
 1. Verifies the code with the ClawBank backend
-2. Creates a secure wallet for your agent (via Turnkey — you never see a private key)
-3. Connects the wallet to the workspace's multisig
-4. Generates a session token for your agent
+2. Receives a session token for your agent
+3. Writes credentials to `.env`
 
-### 4. Config is Saved Automatically
+### 3. Config is Saved Automatically
 
-The CLI writes two values to your `.env` file:
+The script writes two values to your `.env` file:
 
 ```
 CLAWBANK_API_URL=https://your-deployment.convex.cloud
@@ -79,7 +84,7 @@ CLAWBANK_AGENT_TOKEN=eyJhbG...
 
 That's everything your agent needs to authenticate.
 
-### 5. Start Your Agent
+### 4. Start Your Agent
 
 ```bash
 # OpenClaw
@@ -95,11 +100,7 @@ node my-agent.js
 
 Your agent uses the session token from `.env` to make API calls. It never has access to private keys — all signing happens on the server.
 
-### Using the SDK (recommended)
-
-```bash
-npm install @clawbank/sdk
-```
+### Using the SDK (future)
 
 ```typescript
 import { ClawBankAgent } from "@clawbank/sdk";
@@ -129,29 +130,28 @@ curl -X POST "$CLAWBANK_API_URL/api/agent/spend" \
 
 ## Environment Variables
 
-| Variable | Set by CLI? | Description |
+| Variable | Set by script? | Description |
 |---|---|---|
-| `CLAWBANK_API_URL` | Yes | Backend URL |
-| `CLAWBANK_AGENT_TOKEN` | Yes | Session token (JWT) — this is your agent's identity |
+| `CLAWBANK_API_URL` | Yes | Backend URL (Convex deployment) |
+| `CLAWBANK_AGENT_TOKEN` | Yes | Session token — this is your agent's identity |
 
-The CLI writes both of these. You should never need to set them manually.
+The connect script writes both of these. You should never need to set them manually.
 
 ---
 
 ## Session Token Lifecycle
 
-- **Created** when you run `npx @clawbank/cli` and paste a connect code
-- **Lasts** 30 days
-- **Auto-refreshes** — the SDK handles token refresh automatically before expiry
+- **Created** when you run the connect script and paste a connect code
+- **Lasts** 24 hours
 - **Revoked** instantly if a human disconnects your agent from the web app
 
-If your token expires or is revoked, the CLI will tell you:
+If your token expires or is revoked:
 
 ```
 ✗ Session expired. Ask your workspace admin for a new connect code.
 ```
 
-Then just run `npx @clawbank/cli` again.
+Then just run `node scripts/agent-connect.mjs` again with a new code.
 
 ---
 
@@ -160,10 +160,10 @@ Then just run `npx @clawbank/cli` again.
 | Problem | Solution |
 |---|---|
 | "Invalid code" | The code expired (5 min) or was already used. Get a new one from the web app. |
-| "Session expired" | Token is older than 30 days or was revoked. Run `npx @clawbank/cli` again. |
+| "Session expired" | Token expired (24h) or was revoked. Run the connect script again. |
 | "Over budget" | Your spend exceeded the agent's limit. The request becomes a proposal — a human needs to approve it. |
-| "Network error" | Check your internet connection. The CLI retries automatically. |
-| Can't find `.env` | Run the CLI from your project root. It saves `.env` in the current directory. |
+| "Network error" | Check your internet connection. The script retries once automatically. |
+| Can't find `.env` | Run the script from your project root. It saves `.env` in the current directory. |
 
 ---
 

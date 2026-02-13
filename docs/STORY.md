@@ -1,4 +1,4 @@
-# STORY: 0020 Agent Connection Architecture (Turnkey + Workspace Binding)
+# STORY: 0021 Add Agent + Turnkey Wallet + Terminal Connect (MVP)
 
 ## Team Deployment
 
@@ -6,122 +6,133 @@ Deploy Claude Code Agent Team (delegate mode ON):
 
 - Lead / Architect
 - PM/UX
+- Frontend
 - Backend
 - QA
 
-Frontend not required (only minimal UI notes).
+Lead may and is recommended to spawn extra specialist subagents if needed (Turnkey/Solana/Security).
 
+Use shared task list.
 Execute only this story until DONE.
 
-## Inputs (only allowed files)
+## Inputs (must read)
 
-- docs/OVERVIEW.md
-- docs/Potential_Architecture.md (uploaded)
-- AGENTS/\*
-- existing repo code (read-only, no implementation required)
+- docs/ARCH_AGENT_CONNECT.md
+- docs/UX_AGENT_CONNECT.md
+- docs/SECURITY_AGENT_CONNECT.md
+- docs/AGENT_INSTALL.md (edit: terminal-only install)
+- existing workspace + squads code
 
 ## Scope (must)
 
-Architecture + design only. No implementation. No SDK build.
+### Gate 0 — Terminal install only (doc change)
 
-### Deliverable A — Architecture spec file (required)
+Update docs/AGENT_INSTALL.md:
 
-Create docs/ARCH_AGENT_CONNECT.md with:
+- Remove npm package publishing assumptions (no @clawbank/cli package yet).
+- Replace with local repo runnable command, e.g.:
+  - `pnpm clawbank:connect` or `node scripts/agent/connect.mjs`
+- Keep: connect code → token saved to .env → agent can call backend.
+  (Installation is terminal-only for v1.)
 
-1. Goals + non-goals (v1)
-2. Trust boundaries + threat model (short)
-3. Components:
-   - Web App
-   - Convex (DB + functions)
-   - "Signing & Policy Service" (Convex actions)
-   - Turnkey (agent wallet custody/sign)
-   - Squads (multisig + spending limits)
-   - Agent Runtime (OpenClaw / Claude Code / headless bot)
-4. Data model (conceptual):
-   - workspace
-   - agent
-   - agentWallet
-   - agentSession / agentToken
-   - spendingLimit binding
-   - audit log / activity
-     (Do not change DB schema in code; just describe entities + indexes needed.)
-5. End-to-end flows (sequence steps):
-   F1) Add Agent (human clicks "Add agent")
-   F2) Create Turnkey wallet (or alternative) and store pubkey
-   F3) Bind agent to workspace (DB + on-chain membership)
-   F4) Install/run agent runtime and authenticate to workspace
-   F5) Agent requests spend (tx intent) -> policy gate -> sign -> broadcast
-   F6) Over-limit path -> proposal created -> humans approve
-6. API contracts (Convex):
-   - mutations/queries/actions names + inputs/outputs
-   - auth requirements for each
-7. Key management:
-   - what secrets live where (Convex env, agent runtime env)
-   - rotation story
-8. Spending limits enforcement plan:
-   - what is enforced in Squads vs backend policy gate
-   - how to prevent bypass (agent cannot sign directly)
-9. Failure modes + deterministic recovery:
-   - Turnkey down
-   - RPC down
-   - stale spending limits
-   - replay prevention for agent requests
+QA must verify doc matches actual command.
 
-### Deliverable B — Installation + bootstrap plan (required)
+### A) Backend — Turnkey provisioning + agent records
 
-Create docs/AGENT_INSTALL.md with:
+Implement server-side Turnkey integration (no private keys):
 
-- Supported runtimes (OpenClaw / Claude Code)
-- What runs where (user machine vs VPS)
-- Install steps (high-level, deterministic)
-- Required environment variables
-- How workspace connection happens:
-  - one-time connect code / link / JWT / signed challenge
-  - how agent proves control of Turnkey wallet (or proves identity)
+- Convex env:
+  - TURNKEY_API_PUBLIC_KEY / TURNKEY_API_PRIVATE_KEY (or stamp method)
+  - TURNKEY_ORG_ID (if required)
+  - RPC_URL
+- Create agent record via human-auth mutation:
+  - `agents.create({ workspaceId, name, budget }) -> { agentId }`
+  - Sets agent.status="provisioning" and schedules provision action.
+- Provision action:
+  - creates Turnkey wallet for agent
+  - stores turnkeyWalletId + publicKey
+  - generates connect code (short TTL)
+  - returns connect code for UI display OR stores it retrievable once
+- Persist sessions as HASHED secrets only (connect codes + session tokens hashed).
+- Add agent-scoped auth for HTTP actions:
+  - `auth.exchangeConnectCode({ connectCode }) -> { sessionToken, agentId, workspaceId, expiresAt }`
 
-### Deliverable C — Minimal UI microcopy/spec (required)
+Security requirements:
 
-PM/UX writes docs/UX_AGENT_CONNECT.md:
+- never log Turnkey credentials
+- never store raw tokens in DB (hash only)
+- rate limit:
+  - connect-code generation per workspace
+  - exchange attempts per IP/agent
+- deterministic errors
 
-- Add Agent button placement
-- Modal steps (just text, no design)
-- What user sees after success (agent status, budget, last activity)
-- Error messages and empty states
+### B) Frontend — Add Agent modal (3 steps) + connect code display
 
-### Deliverable D — Security review checklist (required)
+Implement UI per UX spec:
 
-QA writes docs/SECURITY_AGENT_CONNECT.md:
+- Entry points:
+  - Agents tab: "Add Agent" CTA
+  - Workspace header: "Connect Agent"
+- Modal:
+  Step 1: name + budget (token+amount+period)
+  Step 2: connect code display (with expiry countdown)
+  Step 3: success
+- Step 2 must show terminal command (copy button).
+- When backend reports “agent connected” (token exchanged), auto-advance to Done.
 
-- checklist for secret handling + logging
-- auth + replay prevention
-- principle of least privilege
-- abuse/rate limiting
-- “happy-path demo protection” rules
+(Use realtime subscription/query polling—backend chooses. Must be deterministic.)
 
-## Constraints
+### C) Terminal connect command (repo-local CLI)
 
-- Must align with product overview agent model:
-  - Turnkey agent wallet
-  - added as Squads member
-  - spending limits gating autonomy
-- Must align with architecture trust boundaries diagram:
-  - Convex as coordination
-  - server-side policy/signing service calls Turnkey sign and RPC broadcast
-- Must be detailed enough that next implementation story is trivial.
+Implement a minimal terminal command (no publishing):
+
+- Prompts for connect code OR accepts as argument.
+- Calls backend `auth.exchangeConnectCode`.
+- Writes `.env` in CWD:
+  - CLAWBANK_API_URL=<convex deployment URL>
+  - CLAWBANK_AGENT_TOKEN=<token>
+- Never prints token after writing.
+- Explicit ✓/✗ output.
+- Retry logic: 2 attempts then stop.
+
+### D) Agent status endpoint (minimal)
+
+Implement HTTP action:
+
+- `agent.status({ sessionToken }) -> { agentId, workspaceId, status, limits }`
+
+This is needed for CLI “Connected ✓” verification.
+
+### E) QA (must)
+
+- Run ./scripts/checks.sh
+- Verify:
+  - happy path: create agent → connect code → terminal connect writes .env → status returns active
+  - connect code single-use + expiry
+  - token is not logged / not stored raw
+  - revoke/disable basic path (can be stubbed but must exist as non-dangerous toggle)
+- Edge cases ≥ 6:
+  - expired code
+  - reused code
+  - Turnkey API failure
+  - workspace unauthorized create
+  - missing budget fields
+  - CLI run outside repo (no .env write perms)
 
 ## Out of scope (must not)
 
-- Implement Turnkey SDK integration
-- Implement Add Agent UI
-- Implement proposal creation
-- Implement spending limit creation
-- Any code changes besides new docs files
+- Spend.request implementation (keep stubbed)
+- Squads member add/remove proposals unless already required for “active” (if required, do minimal viable)
+- npm package publishing
+- multi-runtime installers (only terminal)
 
-## Done Conditions
+## Done Conditions (hard gates)
 
-- docs/ARCH_AGENT_CONNECT.md created
-- docs/AGENT_INSTALL.md created
-- docs/UX_AGENT_CONNECT.md created
-- docs/SECURITY_AGENT_CONNECT.md created
-- QA review notes included
-- DONE: 0020 written to docs/PROGRESS.md
+- Gate 0 doc updated and matches real CLI command
+- Add Agent modal works end-to-end
+- Turnkey wallet created and publicKey stored
+- Connect code exchange produces session token; token saved to .env via terminal command
+- agent.status works using token
+- lint/typecheck/build/tests pass
+- QA notes written
+- DONE: 0021 written to docs/PROGRESS.md
