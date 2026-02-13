@@ -87,3 +87,47 @@ export const storeWorkspace = internalMutation({
     return workspaceId;
   },
 });
+
+export const reconcileMembersFromOnchain = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    onchainMembers: v.array(
+      v.object({
+        walletAddress: v.string(),
+        role: v.union(v.literal("creator"), v.literal("member")),
+      }),
+    ),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const dbMembers = await ctx.db
+      .query("workspace_members")
+      .withIndex("by_workspace", (q) =>
+        q.eq("workspaceId", args.workspaceId),
+      )
+      .collect();
+
+    const dbWallets = new Set(dbMembers.map((m) => m.walletAddress));
+    const onchainWallets = new Set(
+      args.onchainMembers.map((m) => m.walletAddress),
+    );
+
+    // Add members that exist on-chain but not in DB
+    for (const onchain of args.onchainMembers) {
+      if (!dbWallets.has(onchain.walletAddress)) {
+        await ctx.db.insert("workspace_members", {
+          workspaceId: args.workspaceId,
+          walletAddress: onchain.walletAddress,
+          role: onchain.role,
+          addedAt: Date.now(),
+        });
+      }
+    }
+
+    // Remove DB members that no longer exist on-chain
+    for (const dbMember of dbMembers) {
+      if (!onchainWallets.has(dbMember.walletAddress)) {
+        await ctx.db.delete(dbMember._id);
+      }
+    }
+  },
+});

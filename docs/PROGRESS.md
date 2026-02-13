@@ -96,3 +96,43 @@ All 4 checks pass:
 - Loading skeleton while balance data fetches
 
 DONE: 001E
+
+## 001F QA Notes
+
+### Checks (scripts/checks.sh)
+
+All 4 checks pass:
+- **Lint**: PASS (0 errors, 0 warnings)
+- **Typecheck**: PASS
+- **Build**: PASS
+- **Tests**: PASS (no tests yet)
+
+### Gate 0
+
+Decision written in docs/DECISIONS.md: "Member removal flow v1"
+- Proposal-based via Squads configTransactionCreate
+- 6 UI states documented (idle, confirming, submitting, pending, success, error)
+- Data requirements specified (workspaceId, memberPublicKey, multisigAddress)
+
+### Edge Cases (5)
+
+1. **0 members**: PASS — MembersTab renders empty state (User icon + "No members found") when members array is empty. Should not happen in practice but handled gracefully.
+2. **1 member (sole member)**: PASS — Manage button is disabled (greyed, not clickable). Delete button is not rendered (`!isSoleMember` guard).
+3. **DB vs on-chain mismatch**: PASS — `reconcileMembersFromOnchain` mutation adds members that exist on-chain but not in DB, and removes DB members that no longer exist on-chain. Frontend `useWorkspaceMembers` merges both sources with on-chain taking precedence.
+4. **On-chain fetch fails**: PASS — `useWorkspaceMembers` shows amber warning "Could not sync on-chain members. Showing cached data." when `onchainError` is truthy. Members still render from DB data.
+5. **Delete confirm cancel + confirm flows**: PASS — Cancel closes modal and resets state. Confirm shows spinner + "Removing..." text, modal has `preventClose` during submission. Error state shows explicit error message with retry option. Success shows toast notification.
+
+### Security Checks (3)
+
+1. **Auth gating for member queries/actions**: VERIFIED — `getWorkspaceMembers` query, `fetchMembersOnchain` action, and `removeMember` action all check `ctx.auth.getUserIdentity()` and throw "Unauthenticated" if null.
+2. **Destructive action requires confirmation**: VERIFIED — Delete button opens `DeleteMemberModal` with explicit warning text ("This action cannot be undone"), Cancel + Remove buttons. Cannot remove self or last member (server-side validation).
+3. **No secrets/logging of keys**: VERIFIED — No `console.log` in any new files. Sponsor key accessed only via `getSponsorKey()`, never logged or returned. `removeMember` action does not expose multisig PDA or sponsor key to client.
+
+### Architecture Notes
+
+- **DrawerTabs**: Fully reusable component with keyboard accessibility (arrow keys + Enter). Supports arbitrary tabs, optional icons, optional rightSlot.
+- **Placeholder tabs**: Requests, Activity, Agents, Humans, Balances — per OVERVIEW.md workspace tab spec.
+- **Members data strategy**: DB-first render (instant via Convex reactive query), on-chain overlay via TanStack Query action call, reconciliation mutation syncs DB with on-chain truth.
+- **Remove member flow**: Squads configTransactionCreate proposal → auto-approve (threshold=1) → DB reconciliation. All states surfaced to user.
+
+DONE: 001F

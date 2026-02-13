@@ -5,11 +5,17 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { useConvexAuth } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { Plus, LogOut, KeyRound } from 'lucide-react'
+import {
+  Plus, LogOut, KeyRound,
+  Inbox, Activity, Bot, Users, Wallet,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { CreateWorkspaceModal } from '~/components/CreateWorkspaceModal'
 import { BalanceHeader } from '~/components/BalanceHeader'
 import { TokenListModal } from '~/components/TokenListModal'
+import { DrawerTabs, type TabItem } from '~/components/DrawerTabs'
+import { TabPlaceholder } from '~/components/TabPlaceholder'
+import { MembersTab } from '~/components/MembersTab'
 import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
 import { Id } from '../../convex/_generated/dataModel'
 
@@ -37,6 +43,14 @@ function formatDate(timestamp: number): string {
   })
 }
 
+const DRAWER_TABS: TabItem[] = [
+  { key: 'requests', label: 'Requests', icon: <Inbox size={14} /> },
+  { key: 'activity', label: 'Activity', icon: <Activity size={14} /> },
+  { key: 'agents', label: 'Agents', icon: <Bot size={14} /> },
+  { key: 'humans', label: 'Humans', icon: <Users size={14} /> },
+  { key: 'balances', label: 'Balances', icon: <Wallet size={14} /> },
+]
+
 function WorkspacesPage() {
   const { isAuthenticated, isLoading, userEmail, walletAddress, logout, exportWallet } =
     useAuth()
@@ -47,6 +61,7 @@ function WorkspacesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<Id<"workspaces"> | null>(null)
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState('humans')
 
   const workspaces = useQuery(
     api.queries.listUserWorkspaces.listUserWorkspaces,
@@ -211,13 +226,15 @@ function WorkspacesPage() {
         </div>
       )}
 
-      {/* Balance section for selected workspace */}
+      {/* Workspace drawer */}
       {selectedWorkspaceId && (
-        <WorkspaceBalanceSection
+        <WorkspaceDrawer
           workspaceId={selectedWorkspaceId}
           isTokenModalOpen={isTokenModalOpen}
-          onOpenModal={() => setIsTokenModalOpen(true)}
-          onCloseModal={() => setIsTokenModalOpen(false)}
+          onOpenTokenModal={() => setIsTokenModalOpen(true)}
+          onCloseTokenModal={() => setIsTokenModalOpen(false)}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
           onClose={() => {
             setSelectedWorkspaceId(null)
             setIsTokenModalOpen(false)
@@ -235,7 +252,7 @@ function WorkspacesPage() {
 
 function BalanceHeaderSkeleton() {
   return (
-    <div className="mx-auto mb-6 max-w-3xl animate-pulse rounded-2xl border border-gray-100 bg-white p-6">
+    <div className="mb-4 animate-pulse rounded-2xl border border-gray-100 bg-white p-6">
       <div className="flex items-start justify-between">
         <div className="flex flex-col gap-2">
           <div className="h-4 w-24 rounded bg-gray-200" />
@@ -251,42 +268,85 @@ function BalanceHeaderSkeleton() {
   )
 }
 
-function WorkspaceBalanceSection({
+function WorkspaceDrawer({
   workspaceId,
   isTokenModalOpen,
-  onOpenModal,
-  onCloseModal,
+  onOpenTokenModal,
+  onCloseTokenModal,
+  activeTab,
+  onTabChange,
   onClose,
 }: {
   workspaceId: Id<"workspaces">
   isTokenModalOpen: boolean
-  onOpenModal: () => void
-  onCloseModal: () => void
+  onOpenTokenModal: () => void
+  onCloseTokenModal: () => void
+  activeTab: string
+  onTabChange: (key: string) => void
   onClose: () => void
 }) {
-  const { data, isLoading } = useWorkspaceBalance(workspaceId)
+  const { data: balanceData, isLoading: balanceLoading } = useWorkspaceBalance(workspaceId)
 
-  if (isLoading) {
-    return <BalanceHeaderSkeleton />
-  }
-
-  if (!data || data.tokens.length === 0 || data.totalUsd <= 0) {
-    return null
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'humans':
+        return <MembersTab workspaceId={workspaceId} />
+      case 'requests':
+        return <TabPlaceholder icon={<Inbox size={28} className="text-gray-400" />} label="Requests" />
+      case 'activity':
+        return <TabPlaceholder icon={<Activity size={28} className="text-gray-400" />} label="Activity" />
+      case 'agents':
+        return <TabPlaceholder icon={<Bot size={28} className="text-gray-400" />} label="Agents" />
+      case 'balances':
+        return <TabPlaceholder icon={<Wallet size={28} className="text-gray-400" />} label="Balances" />
+      default:
+        return null
+    }
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <BalanceHeader
-        totalUsd={data.totalUsd}
-        tokens={data.tokens}
-        onOpenModal={onOpenModal}
-        onClose={onClose}
-      />
-      <TokenListModal
-        isOpen={isTokenModalOpen}
-        onClose={onCloseModal}
-        tokens={data.tokens}
-      />
-    </div>
+    <motion.div
+      className="mx-auto mt-4 max-w-3xl rounded-2xl border border-gray-100 bg-white p-6"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      {/* Balance header */}
+      {balanceLoading ? (
+        <BalanceHeaderSkeleton />
+      ) : balanceData && balanceData.tokens.length > 0 && balanceData.totalUsd > 0 ? (
+        <>
+          <BalanceHeader
+            totalUsd={balanceData.totalUsd}
+            tokens={balanceData.tokens}
+            onOpenModal={onOpenTokenModal}
+            onClose={onClose}
+          />
+          <TokenListModal
+            isOpen={isTokenModalOpen}
+            onClose={onCloseTokenModal}
+            tokens={balanceData.tokens}
+          />
+        </>
+      ) : (
+        <div className="mb-4 flex justify-end">
+          <button
+            className="cursor-pointer rounded-full p-1 text-gray-400 transition-colors hover:text-gray-600"
+            onClick={onClose}
+          >
+            <Plus size={16} className="rotate-45" />
+          </button>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <DrawerTabs
+        items={DRAWER_TABS}
+        activeKey={activeTab}
+        onChange={onTabChange}
+      >
+        {renderTabContent()}
+      </DrawerTabs>
+    </motion.div>
   )
 }
