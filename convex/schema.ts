@@ -12,8 +12,8 @@ export default defineSchema({
   workspaces: defineTable({
     name: v.string(),
     multisigAddress: v.string(),
+    vaultAddress: v.string(),
     creatorTokenIdentifier: v.string(),
-    network: v.literal("mainnet"),
     createdAt: v.number(),
   })
     .index("by_creator", ["creatorTokenIdentifier"])

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { useConvexAuth } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { Plus, LogOut, Globe, X, KeyRound } from 'lucide-react'
+import { Plus, LogOut, X, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { CreateWorkspaceModal } from '~/components/CreateWorkspaceModal'
 import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
@@ -18,8 +18,7 @@ export const Route = createFileRoute('/workspaces')({
 interface Workspace {
   _id: string
   name: string
-  multisigAddress: string
-  network: string
+  vaultAddress: string
   createdAt: number
 }
 
@@ -141,18 +140,12 @@ function WorkspacesPage() {
                   <div className="flex flex-col gap-1">
                     <h3 className="font-semibold text-gray-900">{ws.name}</h3>
                     <p className="font-mono text-sm text-gray-500">
-                      {truncateAddress(ws.multisigAddress)}
+                      {truncateAddress(ws.vaultAddress)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5 rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">
-                      <Globe size={12} />
-                      {ws.network}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {formatDate(ws.createdAt)}
-                    </span>
-                  </div>
+                  <span className="text-xs text-gray-400">
+                    {formatDate(ws.createdAt)}
+                  </span>
                 </div>
               </motion.div>
             ))}

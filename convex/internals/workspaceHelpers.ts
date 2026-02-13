@@ -42,8 +42,8 @@ export const storeWorkspace = internalMutation({
   args: {
     name: v.string(),
     multisigAddress: v.string(),
+    vaultAddress: v.string(),
     creatorTokenIdentifier: v.string(),
-    network: v.literal("mainnet"),
     createdAt: v.number(),
     members: v.array(
       v.object({
@@ -61,8 +61,8 @@ export const storeWorkspace = internalMutation({
     const workspaceId = await ctx.db.insert("workspaces", {
       name: args.name,
       multisigAddress: args.multisigAddress,
+      vaultAddress: args.vaultAddress,
       creatorTokenIdentifier: args.creatorTokenIdentifier,
-      network: args.network,
       createdAt: args.createdAt,
     });
 

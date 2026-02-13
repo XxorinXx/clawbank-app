@@ -3,8 +3,6 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
-import { PublicKey } from "@solana/web3.js";
 
 interface TokenBalanceInfo {
   mint: string;
@@ -38,17 +36,10 @@ export const getWorkspaceBalance = action({
       throw new Error("Workspace not found");
     }
 
-    // Derive vault PDA from multisig address
-    const multisigPda = new PublicKey(workspace.multisigAddress);
-    const [vaultPda] = multisig.getVaultPda({
-      multisigPda,
-      index: 0,
-    });
-
-    // Fetch token balances from RPC
+    // Fetch token balances from RPC using stored vault address
     const balances = await ctx.runAction(
       internal.actions.fetchTokenBalances.fetchTokenBalances,
-      { vaultAddress: vaultPda.toBase58() },
+      { vaultAddress: workspace.vaultAddress },
     );
 
     if (balances.length === 0) {
