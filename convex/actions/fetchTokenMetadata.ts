@@ -3,6 +3,7 @@
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
+import { getJupiterApiKey } from "../env";
 
 const METADATA_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -30,7 +31,8 @@ export const fetchTokenMetadata = internalAction({
     const staleOrMissing: string[] = [];
 
     for (const entry of cached) {
-      if (now - entry.updatedAt < METADATA_TTL_MS) {
+      // Re-fetch if stale OR if previously stored as UNKNOWN (failed fetch)
+      if (now - entry.updatedAt < METADATA_TTL_MS && entry.symbol !== "UNKNOWN") {
         cachedMap.set(entry.mint, {
           mint: entry.mint,
           symbol: entry.symbol,
@@ -98,34 +100,39 @@ export const fetchTokenMetadata = internalAction({
 });
 
 async function fetchFromJupiter(mints: string[]): Promise<TokenMetadata[]> {
+  const apiKey = getJupiterApiKey();
   const results: TokenMetadata[] = [];
 
   // Jupiter search API handles one token at a time, batch sequentially
   for (const mint of mints) {
     try {
-      const res = await fetch(
-        `https://api.jup.ag/tokens/v2/search?query=${mint}`,
-      );
+      const url = `https://api.jup.ag/tokens/v2/search?query=${mint}`;
+      console.log("[metadata] Fetching:", url);
+      const res = await fetch(url, {
+        headers: { "x-api-key": apiKey },
+      });
+      console.log("[metadata] Response status:", res.status);
       if (!res.ok) continue;
 
       const data = await res.json();
-      // Jupiter returns an array of matching tokens
+      console.log("[metadata] Raw response for", mint, ":", JSON.stringify(data).slice(0, 500));
       const tokens = Array.isArray(data) ? data : [];
       const match = tokens.find(
-        (t: { address?: string }) => t.address === mint,
+        (t: { id?: string }) => t.id === mint,
       );
+      console.log("[metadata] Match found:", match ? "yes" : "no");
 
       if (match) {
         results.push({
           mint,
           symbol: match.symbol ?? "UNKNOWN",
           name: match.name ?? "Unknown Token",
-          icon: match.logoURI ?? undefined,
+          icon: match.icon ?? undefined,
           decimals: typeof match.decimals === "number" ? match.decimals : 0,
         });
       }
-    } catch {
-      // Skip failed fetches, will be stored as UNKNOWN
+    } catch (err) {
+      console.log("[metadata] Error fetching", mint, ":", err);
     }
   }
 

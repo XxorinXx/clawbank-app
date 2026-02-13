@@ -18,6 +18,10 @@ export function getRpcUrl(): string {
   return requireEnv("RPC_URL");
 }
 
+export function getJupiterApiKey(): string {
+  return requireEnv("JUPITER_API_KEY");
+}
+
 /**
  * Returns the sponsor private key bytes decoded from bs58.
  * NEVER log, return to client, or include in error messages.
