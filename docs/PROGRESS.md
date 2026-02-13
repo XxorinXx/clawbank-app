@@ -63,3 +63,36 @@ All 4 checks pass:
 - **Vault PDA derivation**: Uses `@sqds/multisig.getVaultPda` to derive the Squads vault address from the workspace's multisig PDA.
 
 DONE: 001D
+
+## 001E QA Notes
+
+### Checks (scripts/checks.sh)
+
+All 4 checks pass:
+- **Lint**: PASS (0 errors, 0 warnings)
+- **Typecheck**: PASS
+- **Build**: PASS
+- **Tests**: PASS (no tests yet)
+
+### Edge Cases (4)
+
+1. **Zero tokens / zero balance**: PASS — `BalanceHeader` returns `null` when `tokens.length === 0 || totalUsd <= 0`. `WorkspaceBalanceSection` also returns `null` when `data.tokens.length === 0`. No empty chrome rendered.
+2. **Missing icons**: PASS — Both `BalanceHeader` icon stack and `TokenListModal` list items use `onError` handler on `<img>` to hide broken image and show a 2-letter symbol fallback. Tokens with `icon: null` render the fallback directly.
+3. **Very large USD value formatting**: PASS — `TokenListModal.formatUsd()` formats values >= $1M as `$X.XXM`, values >= $1K with commas, and sub-cent values as `<$0.01`. `AnimatedUsd` uses `toLocaleString` with 2 decimal places and tabular-nums for stable layout.
+4. **Many tokens list performance**: PASS — Token list uses a scrollable container with `max-h-[60vh]` and `overflow-y-auto`. No virtualization needed since the balance engine already filters zero-value tokens, keeping the list small. Custom scrollbar styles applied.
+
+### Security Checks (2)
+
+1. **No secrets rendered/logged**: VERIFIED — Grepped all new component files for `console.log`, `console.warn`, `console.error` — none found. No mint addresses, API keys, or raw token data exposed in rendered HTML beyond icon URLs and display values.
+2. **Modal does not leak outside auth gate**: VERIFIED — `TokenListModal` is only rendered inside `WorkspaceBalanceSection`, which requires a `workspaceId` (set by clicking a workspace card). The workspace list itself is gated behind `useConvexAuth().isAuthenticated` and the route redirects unauthenticated users to `/`.
+
+### UI Spec Compliance
+
+- Icon stack with top 3 overlapping icons + "+X more" count
+- "See more" text on icon stack button opens modal
+- Modal: token list (icon, name, symbol, usdValue) sorted by usdValue desc
+- Modal: full-width rounded "Send" button (stub)
+- Animated totalUsd with ease-out cubic interpolation (600ms)
+- Loading skeleton while balance data fetches
+
+DONE: 001E
