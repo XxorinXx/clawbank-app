@@ -1,121 +1,108 @@
-# STORY: 001D Workspace Balance Engine (data only)
+# STORY: 001E Workspace Balance UI
 
 ## Team Deployment
 
 Deploy Claude Code Agent Team (delegate mode ON):
 
 - Lead
-- Backend
+- PM/UX
 - Frontend
 - QA
 
-PM/UX not required.
+Backend not required unless a bug is found.
 
 Use shared task list.
 Execute only this story until DONE.
 
 ## Skills enabled
 
-Backend:
-
-- https://skills.sh/solana-foundation/solana-dev-skill/solana-dev
-- https://skills.sh/waynesutton/convexskills/convex-best-practices
-- https://skills.sh/waynesutton/convexskills/convex-functions
-- https://skills.sh/waynesutton/convexskills/convex-realtime
-
-Jupiter API links :
-https://dev.jup.ag/api-reference/tokens/v2/search
-https://dev.jup.ag/api-reference/price/v3/price
-
 Frontend:
 
+- https://skills.sh/nextlevelbuilder/ui-ux-pro-max-skill/ui-ux-pro-max
+- https://skills.sh/jezweb/claude-skills/tailwind-v4-shadcn
 - https://skills.sh/jezweb/claude-skills/tanstack-query
+- https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
+
+## Inputs (only allowed files)
+
+- docs/PRD.md
+- docs/ACCEPTANCE.md
+- AGENTS/\*
+- scripts/checks.sh
+- existing hooks from 001D:
+  - useWorkspaceBalance(...)
+  - useTokenMetadata(...)
+  - useTokenPrices(...)
 
 ## Scope (must)
 
-### Backend — token balance pipeline
+### Balance header UI (Frontend)
 
-Implement deterministic balance engine:
+On the workspace page, replace debug JSON with a Balance header section:
 
-1. Fetch token balances using our RPC(please set env for rpc url).
-2. Fetch token metadata from Jupiter API.
-3. Fetch token prices from Jupiter API.
-4. Add **Convex action caching**:
-   - metadata cache
-   - price cache
-   - TTL-based invalidation
-5. Compute:
-   - per-token USD value
-   - total workspace USD balance.
+Layout:
 
-Backend must expose **one query**:
+- Left: Title “Total balance”
+- Under title: the `$<totalUsd>` value displayed with a smooth number animation.
+- Right of title: token icon stack button:
+  - show top 3 token icons
+  - overlap icons using negative margin-left ≈ 50% icon width
+  - to the right of icons show +[x extra tokens]
 
-getWorkspaceBalance(workspaceId) →  
-returns:
+Behavior:
 
-- totalUsd
-- tokens[]:
-  - mint
-  - symbol
-  - name
+- Clicking the icon stack OR “See more” opens a modal.
+
+### Modal token list (Frontend)
+
+Modal contains:
+
+- List of tokens showing:
   - icon
-  - amount
-  - usdValue
+  - name
+  - symbol
+  - usdValue (per token)
+- Sort tokens by usdValue desc.
+- Footer: full-width rounded “Send” button (stub, no functionality).
 
-Schema design is **backend responsibility**:
+### Empty / loading states
 
-- must support fast future queries
-- must be indexed properly
-- do not over-normalize.
+- If zero balance or no tokens:
+  - don't render
+- Loading:
+  - use Suspense fallback skeletons (minimal).
 
-Backend may also expose internal cached endpoints for:
+### Constraints
 
-- metadata
-- prices
-
-These must use Convex action caching with TTL and must not be called from the client directly (only via hooks).
-should aim to reduce api calls and convex usage gb\hr
-
-### Frontend — minimal wiring only (Suspense + hooks)
-
-- Use TanStack Query **useSuspenseQuery** (or useQuery with suspense enabled) for data loading.
-- Do not call Convex directly from components. Expose hooks in `src/hooks/`:
-
-Hooks required:
-
-1. `useWorkspaceBalance(workspaceId)`
-   - returns: `{ totalUsd, tokens }` (from backend query)
-2. `useTokenMetadata(mints[])`
-   - returns: metadata map keyed by mint
-   - uses cached backend action/query (not direct Jupiter from client)
-3. `useTokenPrices(mints[])`
-   - returns: price map keyed by mint
-   - uses cached backend action/query (not direct Jupiter from client)
-
-- Workspace page renders a temporary JSON/debug view using these hooks.
-- No design, animation, modal yet.
-
-### QA
-
-Verify:
-
-- RPC failure handled deterministically.
-- Missing metadata handled.
-- Zero-balance workspace handled.
-- Caching actually used (no repeated external calls).
+- Do not add new balance fetching logic.
+- Do not call Jupiter/RPC directly from UI.
+- Only consume the existing hooks.
 
 ## Out of scope (must not)
 
-- Token icons UI
-- Animated numbers
-- Modal list
-- Send button
-- Any new layout design
+- Send flow
+- Token detail pages
+- New navigation tabs
+- Any backend changes except bugfixes required for UI
+
+## QA requirements
+
+- Run ./scripts/checks.sh
+- Edge cases ≥ 4:
+  - zero tokens
+  - missing icons
+  - very large USD value formatting
+  - many tokens list performance (basic)
+- Security checks ≥ 2:
+  - no secrets rendered/logged
+  - modal does not leak raw token lists outside auth-gated route
 
 ## Done Conditions
 
 - lint/typecheck/build/tests pass
-- caching confirmed working
-- totalUsd correct for sample workspace
-- QA edge/security notes written
-- DONE: 001D written to docs/PROGRESS.md
+- UI matches spec:
+  - icon stack + “See more”
+  - modal list + Send stub
+  - animated totalUsd
+- QA notes written
+- DONE: 001E written to docs/PROGRESS.md

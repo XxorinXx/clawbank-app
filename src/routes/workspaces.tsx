@@ -5,9 +5,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { useConvexAuth } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { Plus, LogOut, X, KeyRound } from 'lucide-react'
+import { Plus, LogOut, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { CreateWorkspaceModal } from '~/components/CreateWorkspaceModal'
+import { BalanceHeader } from '~/components/BalanceHeader'
+import { TokenListModal } from '~/components/TokenListModal'
 import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
 import { Id } from '../../convex/_generated/dataModel'
 
@@ -44,6 +46,7 @@ function WorkspacesPage() {
   const didSync = useRef(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<Id<"workspaces"> | null>(null)
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false)
 
   const workspaces = useQuery(
     api.queries.listUserWorkspaces.listUserWorkspaces,
@@ -134,7 +137,16 @@ function WorkspacesPage() {
                 className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-5 transition-colors hover:border-gray-200 hover:bg-gray-50"
                 whileHover={{ scale: 1.005 }}
                 whileTap={{ scale: 0.995 }}
-                onClick={() => setSelectedWorkspaceId(ws._id as Id<"workspaces">)}
+                onClick={() => {
+                  const id = ws._id as Id<"workspaces">
+                  if (selectedWorkspaceId === id) {
+                    setSelectedWorkspaceId(null)
+                    setIsTokenModalOpen(false)
+                  } else {
+                    setSelectedWorkspaceId(id)
+                    setIsTokenModalOpen(false)
+                  }
+                }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
@@ -199,11 +211,17 @@ function WorkspacesPage() {
         </div>
       )}
 
-      {/* Debug balance panel */}
+      {/* Balance section for selected workspace */}
       {selectedWorkspaceId && (
-        <BalanceDebugPanel
+        <WorkspaceBalanceSection
           workspaceId={selectedWorkspaceId}
-          onClose={() => setSelectedWorkspaceId(null)}
+          isTokenModalOpen={isTokenModalOpen}
+          onOpenModal={() => setIsTokenModalOpen(true)}
+          onCloseModal={() => setIsTokenModalOpen(false)}
+          onClose={() => {
+            setSelectedWorkspaceId(null)
+            setIsTokenModalOpen(false)
+          }}
         />
       )}
 
@@ -215,41 +233,60 @@ function WorkspacesPage() {
   )
 }
 
-function BalanceDebugPanel({
+function BalanceHeaderSkeleton() {
+  return (
+    <div className="mx-auto mb-6 max-w-3xl animate-pulse rounded-2xl border border-gray-100 bg-white p-6">
+      <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-2">
+          <div className="h-4 w-24 rounded bg-gray-200" />
+          <div className="h-8 w-40 rounded bg-gray-200" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-full bg-gray-200" />
+          <div className="h-8 w-8 -ml-3 rounded-full bg-gray-200" />
+          <div className="h-8 w-8 -ml-3 rounded-full bg-gray-200" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceBalanceSection({
   workspaceId,
+  isTokenModalOpen,
+  onOpenModal,
+  onCloseModal,
   onClose,
 }: {
   workspaceId: Id<"workspaces">
+  isTokenModalOpen: boolean
+  onOpenModal: () => void
+  onCloseModal: () => void
   onClose: () => void
 }) {
-  const { data, isLoading, error } = useWorkspaceBalance(workspaceId)
+  const { data, isLoading } = useWorkspaceBalance(workspaceId)
+
+  if (isLoading) {
+    return <BalanceHeaderSkeleton />
+  }
+
+  if (!data || data.tokens.length === 0 || data.totalUsd <= 0) {
+    return null
+  }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-      <div className="relative max-h-[80vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-6 shadow-xl">
-        <button
-          className="absolute right-4 top-4 cursor-pointer rounded-full p-1 text-gray-400 hover:text-gray-600"
-          onClick={onClose}
-        >
-          <X size={20} />
-        </button>
-        <h3 className="mb-4 text-lg font-bold text-gray-900">
-          Balance Debug View
-        </h3>
-        {isLoading && (
-          <p className="text-sm text-gray-500">Loading balances...</p>
-        )}
-        {error && (
-          <p className="text-sm text-red-500">
-            Error: {error instanceof Error ? error.message : 'Unknown error'}
-          </p>
-        )}
-        {data && (
-          <pre className="whitespace-pre-wrap break-all rounded-xl bg-gray-50 p-4 text-xs text-gray-700">
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        )}
-      </div>
+    <div className="mx-auto max-w-3xl">
+      <BalanceHeader
+        totalUsd={data.totalUsd}
+        tokens={data.tokens}
+        onOpenModal={onOpenModal}
+        onClose={onClose}
+      />
+      <TokenListModal
+        isOpen={isTokenModalOpen}
+        onClose={onCloseModal}
+        tokens={data.tokens}
+      />
     </div>
   )
 }
