@@ -178,6 +178,18 @@ export const revokeAgentInternal = internalMutation({
       connectCodeExpiresAt: undefined,
     });
 
+    // Clear onchainCreateKey from spending limits so stale keys
+    // don't leak into a future re-activation
+    const limits = await ctx.db
+      .query("spending_limits")
+      .withIndex("by_agent_token", (q) => q.eq("agentId", args.agentId))
+      .collect();
+    for (const limit of limits) {
+      if (limit.onchainCreateKey) {
+        await ctx.db.patch(limit._id, { onchainCreateKey: undefined });
+      }
+    }
+
     // Delete all agent_sessions for this agent
     const sessions = await ctx.db
       .query("agent_sessions")

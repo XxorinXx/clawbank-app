@@ -79,6 +79,15 @@ export const buildAgentActivationTx = action({
       );
     const currentTransactionIndex = Number(multisigAccount.transactionIndex);
 
+    // Guard: if agent is already an on-chain member, don't add again
+    const agentAlreadyMember = multisigAccount.members.some(
+      (m: multisig.types.Member) =>
+        m.key.toBase58() === agentPubkey.toBase58(),
+    );
+    if (agentAlreadyMember) {
+      throw new Error("Agent is already an on-chain multisig member");
+    }
+
     // Generate createKey for spending limit PDA
     const createKey = Keypair.generate();
     const { blockhash } = await connection.getLatestBlockhash();

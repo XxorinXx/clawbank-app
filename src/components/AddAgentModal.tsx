@@ -97,6 +97,10 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
   const [activationError, setActivationError] = useState("");
   const activatingRef = useRef(false);
 
+  // Latch: once we detect the agent is connected, remember it so brief
+  // query-refresh undefined blips don't flash back to the connect-code UI.
+  const [agentConnected, setAgentConnected] = useState(false);
+
   // Reactive queries for step 2
   const connectCodeData = useQuery(
     api.queries.agents.getConnectCode,
@@ -107,8 +111,15 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     step === 2 && agentId ? { workspaceId } : "skip",
   );
 
-  // Find our agent in the list to detect active status
+  // Find our agent in the list to detect status changes
   const currentAgent = agentsList?.find((a: { _id: string }) => a._id === agentId);
+
+  // Latch connected status
+  useEffect(() => {
+    if (currentAgent?.status === "connected" || currentAgent?.status === "active") {
+      setAgentConnected(true);
+    }
+  }, [currentAgent?.status]);
 
   // Set default token when balance data loads
   useEffect(() => {
@@ -198,18 +209,19 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     setActivationError("");
   }, []);
 
-  // Trigger on-chain activation when agent connects
+  // Auto-trigger activation when agent connects
   useEffect(() => {
     if (
       step === 2 &&
-      currentAgent?.status === "connected" &&
+      agentConnected &&
       !activatingRef.current &&
+      !isActivating &&
       !activationError
     ) {
       activatingRef.current = true;
       void handleActivation();
     }
-  }, [step, currentAgent?.status, activationError, handleActivation]);
+  }, [step, agentConnected, isActivating, activationError, handleActivation]);
 
   const resetState = useCallback(() => {
     setStep(1);
@@ -229,14 +241,15 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     setIsTokenDropdownOpen(false);
     setIsActivating(false);
     setActivationError("");
+    setAgentConnected(false);
     activatingRef.current = false;
   }, []);
 
   const revokeAgent = useMutation(api.mutations.agents.revoke);
 
   const handleClose = useCallback(async () => {
-    if (isSubmitting) return;
-    // If closing during step 2 (connect or on-chain activation), revoke the agent
+    if (isSubmitting || isActivating) return;
+    // If closing during step 2 before activation completes, revoke the agent
     if (step === 2 && agentId) {
       try {
         await revokeAgent({ agentId });
@@ -246,7 +259,7 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     }
     onClose();
     resetState();
-  }, [onClose, resetState, isSubmitting, step, agentId, revokeAgent]);
+  }, [onClose, resetState, isSubmitting, isActivating, step, agentId, revokeAgent]);
 
   const isNextEnabled = name.trim().length > 0 && tokenMint.length > 0 && parseFloat(amount) > 0;
 
@@ -492,39 +505,41 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
             transition={{ duration: 0.25, ease: "easeInOut" }}
           >
             <h2 className="mb-1 text-xl font-bold text-gray-900">
-              {isActivating || activationError
+              {agentConnected
                 ? "Activating Agent"
                 : "Connect Your Agent"}
             </h2>
             <p className="mb-6 text-sm text-gray-500">
-              {isActivating
-                ? "Setting up on-chain permissions..."
-                : activationError
+              {agentConnected
+                ? activationError
                   ? "There was a problem during activation."
-                  : "Run this in your agent's terminal — that's it."}
+                  : "Setting up your agent's permissions..."
+                : "Run this in your agent's terminal — that's it."}
             </p>
 
-            {isActivating ? (
-              <div className="flex flex-col items-center gap-3 py-12">
-                <Loader2 size={28} className="animate-spin text-gray-400" />
-                <span className="text-sm text-gray-500">
-                  This may take a few seconds...
-                </span>
-              </div>
-            ) : activationError ? (
-              <div className="flex flex-col items-center gap-4 py-8">
-                <p className="text-center text-sm text-red-500">
-                  {activationError}
-                </p>
-                <motion.button
-                  className="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-2.5 font-medium text-white transition-colors hover:bg-gray-800"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleRetryActivation}
-                >
-                  Retry
-                </motion.button>
-              </div>
+            {agentConnected ? (
+              activationError ? (
+                <div className="flex flex-col items-center gap-4 py-8">
+                  <p className="text-center text-sm text-red-500">
+                    {activationError}
+                  </p>
+                  <motion.button
+                    className="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-2.5 font-medium text-white transition-colors hover:bg-gray-800"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleRetryActivation}
+                  >
+                    Retry
+                  </motion.button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-12">
+                  <Loader2 size={28} className="animate-spin text-gray-400" />
+                  <span className="text-sm text-gray-500">
+                    This may take a few seconds...
+                  </span>
+                </div>
+              )
             ) : connectCodeData?.connectCode && !codeExpired ? (
               <>
                 {/* CLI command */}

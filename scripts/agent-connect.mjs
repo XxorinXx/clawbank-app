@@ -63,14 +63,18 @@ function resolveConvexUrl() {
   return null;
 }
 
-// ── .env writer ─────────────────────────────────────────────────────
+// ── Credentials writer ──────────────────────────────────────────────
+// Write to .clawbank (not .env) so Vite's dev server doesn't trigger
+// a full page reload.  Agents read credentials from this file.
+
+const CREDS_FILE = ".clawbank";
 
 function writeEnvVars(vars) {
-  const envPath = resolve(process.cwd(), ".env");
+  const credsPath = resolve(process.cwd(), CREDS_FILE);
   let lines = [];
 
-  if (existsSync(envPath)) {
-    lines = readFileSync(envPath, "utf-8").split("\n");
+  if (existsSync(credsPath)) {
+    lines = readFileSync(credsPath, "utf-8").split("\n");
   }
 
   for (const [key, value] of Object.entries(vars)) {
@@ -79,13 +83,12 @@ function writeEnvVars(vars) {
     if (idx !== -1) {
       lines[idx] = entry;
     } else {
-      // Append (add a blank separator if file had content and doesn't end blank)
       if (lines.length && lines[lines.length - 1] !== "") lines.push("");
       lines.push(entry);
     }
   }
 
-  writeFileSync(envPath, lines.join("\n") + "\n", "utf-8");
+  writeFileSync(credsPath, lines.join("\n") + "\n", "utf-8");
 }
 
 // ── Exchange code via Convex HTTP action API ────────────────────────
@@ -182,7 +185,7 @@ async function main() {
   });
 
   success(`Connected to workspace`);
-  success("Saved to .env");
+  success(`Saved to ${CREDS_FILE}`);
   blank();
   log("You're all set! Your agent is connected.");
   blank();

@@ -62,6 +62,19 @@ export const buildAgentRevocationTx = action({
       );
     const currentTransactionIndex = Number(multisigAccount.transactionIndex);
 
+    // Check if agent is actually an on-chain member.
+    // The Squads remove_member action throws NotAMember if the pubkey isn't in
+    // the member list — this happens when the agent was never activated on-chain
+    // or was already removed.
+    const agentIsMember = multisigAccount.members.some(
+      (m: multisig.types.Member) =>
+        m.key.toBase58() === agentPubkey.toBase58(),
+    );
+    if (!agentIsMember) {
+      // Agent not on-chain — skip on-chain tx, do DB-only revocation
+      return { serializedTx: "" };
+    }
+
     // Load spending limit for onchainCreateKey
     const limits = await ctx.runQuery(
       internal.internals.agentHelpers.getSpendingLimitsByAgent,
