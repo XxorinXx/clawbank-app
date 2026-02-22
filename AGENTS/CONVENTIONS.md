@@ -29,3 +29,7 @@ BACKEND (Convex)
 - Shared types go in convex/types and src can import to avoid duplication.
 - Shared utils go in convex/utils where appropriate (non-React).
 - All protected calls require Privy JWT; only explicit public endpoints bypass.
+- Sponsor keypair (`SPONSOR_PRIVATE_KEY`) must only be used for `payerKey` and `rentPayer` — never as `creator` or `member` in Squads instructions.
+- All multisig operations use the build-then-user-signs pattern: backend builds tx with user wallet as creator/member, sponsor as fee payer, partial-signs with sponsor, frontend user signs with Privy wallet.
+- DB writes for governance operations happen only after on-chain confirmation.
+- After finishing backend changes, always run `npx convex dev` to validate — it surfaces Convex type errors that `tsc --noEmit` misses.

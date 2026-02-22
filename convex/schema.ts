@@ -63,6 +63,7 @@ export default defineSchema({
     publicKey: v.optional(v.string()),
     status: v.union(
       v.literal("provisioning"),
+      v.literal("connected"),
       v.literal("active"),
       v.literal("paused"),
       v.literal("revoked"),

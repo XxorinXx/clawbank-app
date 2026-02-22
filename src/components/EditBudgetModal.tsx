@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import { Loader2, ChevronDown } from "lucide-react";
-import { useMutation } from "convex/react";
+import { useAction } from "convex/react";
+import { useSolanaWallets } from "@privy-io/react-auth";
+import { VersionedTransaction } from "@solana/web3.js";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Modal } from "~/components/Modal";
@@ -53,7 +55,13 @@ export function EditBudgetModal({
   workspaceId,
   agent,
 }: EditBudgetModalProps) {
-  const updateSpendingLimit = useMutation(api.mutations.agents.updateSpendingLimit);
+  const buildSpendingLimitUpdateTx = useAction(
+    api.actions.updateSpendingLimitOnchain.buildSpendingLimitUpdateTx,
+  );
+  const submitSpendingLimitUpdateTx = useAction(
+    api.actions.updateSpendingLimitOnchain.submitSpendingLimitUpdateTx,
+  );
+  const { wallets: solanaWallets } = useSolanaWallets();
   const { data: balanceData } = useWorkspaceBalance(workspaceId);
 
   const currentLimit = agent.limits[0];
@@ -65,6 +73,7 @@ export function EditBudgetModal({
     (currentLimit?.periodType as PeriodType) ?? "daily",
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("");
   const [formError, setFormError] = useState("");
   const [isTokenDropdownOpen, setIsTokenDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -77,6 +86,7 @@ export function EditBudgetModal({
     setAmount(limit ? String(limit.limitAmount) : "");
     setPeriod((limit?.periodType as PeriodType) ?? "daily");
     setFormError("");
+    setSubmitStatus("");
   }, [agent._id, agent.limits]);
 
   // Close dropdown on outside click
@@ -103,22 +113,62 @@ export function EditBudgetModal({
     if (!isSaveEnabled) return;
     setFormError("");
     setIsSubmitting(true);
+    setSubmitStatus("Building transaction...");
 
     try {
-      await updateSpendingLimit({
+      const limitAmount = parseFloat(amount);
+
+      // Step 1: Build the transaction
+      const { serializedTx, createKey } = await buildSpendingLimitUpdateTx({
         agentId: agent._id,
+        workspaceId,
         tokenMint,
-        limitAmount: parseFloat(amount),
+        limitAmount,
         periodType: period,
       });
+
+      // Step 2: Sign with user's Privy wallet
+      setSubmitStatus("Signing transaction...");
+      const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0));
+      const tx = VersionedTransaction.deserialize(txBytes);
+
+      const wallet = solanaWallets[0];
+      if (!wallet) throw new Error("No Solana wallet found");
+      const signedTx = await wallet.signTransaction(tx);
+      const signedBase64 = btoa(String.fromCharCode(...signedTx.serialize()));
+
+      // Step 3: Submit on-chain + DB update
+      setSubmitStatus("Submitting on-chain...");
+      await submitSpendingLimitUpdateTx({
+        agentId: agent._id,
+        workspaceId,
+        signedTx: signedBase64,
+        createKey,
+        tokenMint,
+        limitAmount,
+        periodType: period,
+      });
+
       onClose();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to update budget";
       setFormError(message);
     } finally {
       setIsSubmitting(false);
+      setSubmitStatus("");
     }
-  }, [isSaveEnabled, updateSpendingLimit, agent._id, tokenMint, amount, period, onClose]);
+  }, [
+    isSaveEnabled,
+    buildSpendingLimitUpdateTx,
+    submitSpendingLimitUpdateTx,
+    solanaWallets,
+    agent._id,
+    workspaceId,
+    tokenMint,
+    amount,
+    period,
+    onClose,
+  ]);
 
   const selectedToken = balanceData?.tokens.find((t) => t.mint === tokenMint);
 
@@ -251,7 +301,7 @@ export function EditBudgetModal({
           disabled={isSubmitting || !isSaveEnabled}
         >
           {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-          {isSubmitting ? "Saving..." : "Save"}
+          {isSubmitting ? submitStatus || "Saving..." : "Save"}
         </motion.button>
       </div>
     </Modal>

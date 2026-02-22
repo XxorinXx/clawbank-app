@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
-    "test": "echo 'No tests yet' && exit 0",
+    "test": "vitest run",
     "clawbank:connect": "node scripts/agent-connect.mjs"
   },
   "dependencies": {
@@ -45,6 +45,7 @@
     "tailwindcss": "^4.1.0",
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.18.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^4.0.18"
   }
 }

@@ -183,20 +183,43 @@ export const updateSpendingLimit = mutation({
       timestamp: Date.now(),
     });
 
-    // Schedule on-chain spending limit update (sponsored)
-    await ctx.scheduler.runAfter(
-      0,
-      internal.actions.updateSpendingLimitOnchain.updateSpendingLimitOnchain,
-      {
-        agentId: args.agentId,
-        workspaceId: agent.workspaceId,
-        tokenMint: args.tokenMint,
-        limitAmount: args.limitAmount,
-        periodType: args.periodType,
-        userWalletAddress: user.walletAddress,
-        oldOnchainCreateKey,
-      },
-    );
+    return { success: true };
+  },
+});
+
+export const confirmAgentActivation = mutation({
+  args: {
+    agentId: v.id("agents"),
+    onchainCreateKey: v.string(),
+    txSignature: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent) throw new Error("Agent not found");
+
+    // Store onchainCreateKey on the spending_limits record
+    const limits = await ctx.db
+      .query("spending_limits")
+      .withIndex("by_agent_token", (q) => q.eq("agentId", args.agentId))
+      .collect();
+    const limit = limits[0];
+    if (limit) {
+      await ctx.db.patch(limit._id, {
+        onchainCreateKey: args.onchainCreateKey,
+      });
+    }
+
+    // Log activity with tx signature
+    await ctx.db.insert("activity_log", {
+      workspaceId: agent.workspaceId,
+      agentId: args.agentId,
+      action: "agent_activated_onchain",
+      txSignature: args.txSignature,
+      timestamp: Date.now(),
+    });
 
     return { success: true };
   },

@@ -98,6 +98,7 @@ export const updateAgentStatus = internalMutation({
     agentId: v.id("agents"),
     status: v.union(
       v.literal("provisioning"),
+      v.literal("connected"),
       v.literal("active"),
       v.literal("paused"),
       v.literal("revoked"),
@@ -159,6 +160,90 @@ export const getTokenMetadata = internalQuery({
       .query("token_metadata_cache")
       .withIndex("by_mint", (q) => q.eq("mint", args.mint))
       .unique();
+  },
+});
+
+export const revokeAgentInternal = internalMutation({
+  args: {
+    agentId: v.id("agents"),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent) throw new Error("Agent not found");
+
+    // Set status to revoked, clear connect code
+    await ctx.db.patch(args.agentId, {
+      status: "revoked",
+      connectCode: undefined,
+      connectCodeExpiresAt: undefined,
+    });
+
+    // Delete all agent_sessions for this agent
+    const sessions = await ctx.db
+      .query("agent_sessions")
+      .withIndex("by_agentId", (q) => q.eq("agentId", args.agentId))
+      .collect();
+    for (const session of sessions) {
+      await ctx.db.delete(session._id);
+    }
+  },
+});
+
+export const updateSpendingLimitRecord = internalMutation({
+  args: {
+    agentId: v.id("agents"),
+    workspaceId: v.id("workspaces"),
+    tokenMint: v.string(),
+    limitAmount: v.number(),
+    periodType: v.union(
+      v.literal("daily"),
+      v.literal("weekly"),
+      v.literal("monthly"),
+    ),
+    onchainCreateKey: v.string(),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    const existingLimits = await ctx.db
+      .query("spending_limits")
+      .withIndex("by_workspace", (q) =>
+        q.eq("workspaceId", args.workspaceId),
+      )
+      .filter((q) => q.eq(q.field("agentId"), args.agentId))
+      .collect();
+
+    const existingLimit = existingLimits[0];
+
+    if (existingLimit && existingLimit.tokenMint === args.tokenMint) {
+      // Same token — update amount, period, and on-chain key
+      await ctx.db.patch(existingLimit._id, {
+        limitAmount: args.limitAmount,
+        periodType: args.periodType,
+        onchainCreateKey: args.onchainCreateKey,
+      });
+    } else {
+      // Token changed or no existing limit — delete old, insert new
+      if (existingLimit) {
+        await ctx.db.delete(existingLimit._id);
+      }
+      await ctx.db.insert("spending_limits", {
+        workspaceId: args.workspaceId,
+        agentId: args.agentId,
+        tokenMint: args.tokenMint,
+        limitAmount: args.limitAmount,
+        spentAmount: 0,
+        periodType: args.periodType,
+        periodStart: Date.now(),
+        onchainCreateKey: args.onchainCreateKey,
+      });
+    }
+
+    // Log activity
+    await ctx.db.insert("activity_log", {
+      workspaceId: args.workspaceId,
+      agentId: args.agentId,
+      action: "limit_updated",
+      timestamp: Date.now(),
+    });
   },
 });
 

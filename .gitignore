@@ -25,3 +25,6 @@ dist-ssr
 *.sln
 *.sw?
 .vite/
+
+# Hackathon drafts (not for repo)
+hackathon/

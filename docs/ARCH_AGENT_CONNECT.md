@@ -212,18 +212,26 @@ Immutable audit trail of all agent actions.
 1. Action constructs a Squads `addMember` instruction:
    - multisig = workspace.multisigAddress
    - newMember = agent.publicKey
+   - creator = user's Privy wallet (the human who initiated the flow)
    - permissions = Voter (can sign proposals) + Executor (can execute approved txs)
 2. Action wraps the instruction in a Squads proposal (since adding members requires threshold approval).
-3. Action signs the proposal creation tx using the system authority key via Turnkey.
-4. Action broadcasts the tx via Helius RPC.
-5. If workspace threshold = 1 (single signer), proposal auto-executes. Otherwise, humans approve in the Requests tab.
-6. On confirmation, action calls mutation:
+3. Action builds the transaction with the sponsor wallet as fee payer (`payerKey` / `rentPayer`)
+   and the user's Privy wallet as the proposal creator/member.
+4. Action partial-signs the transaction with the sponsor keypair.
+5. Action returns the serialized, partially-signed transaction to the frontend.
+6. Frontend prompts the user to sign with their Privy wallet.
+7. Frontend submits the fully-signed transaction back to the backend, which broadcasts via Helius RPC.
+8. If workspace threshold = 1 (single signer), proposal auto-executes. Otherwise, humans approve in the Requests tab.
+9. On on-chain confirmation, action calls mutation:
    - agent.status = "active"
    - Insert spending_limits record(s) from the budget specified in F1.
    - Insert activity_log entry: action = "agent_created".
-7. Action generates a one-time connect code (random 32-byte hex), stores hash in agent_sessions (short TTL = 10 min).
-8. UI displays connect code to human (copy-to-clipboard). Human gives this to the agent operator.
+10. Action generates a one-time connect code (random 32-byte hex), stores hash in agent_sessions (short TTL = 10 min).
+11. UI displays connect code to human (copy-to-clipboard). Human gives this to the agent operator.
 ```
+
+> **Note**: The sponsor wallet is never a multisig member. It only pays transaction fees.
+> All proposal creation and approval requires the user's Privy wallet signature (build-then-user-signs pattern).
 
 ### F4: Agent Runtime Authenticates
 

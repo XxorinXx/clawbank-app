@@ -4,13 +4,17 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import * as multisig from "@sqds/multisig";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { getSponsorKey } from "../env";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+} from "@solana/web3.js";
+import { getSponsorKey, getRpcUrl } from "../env";
+import { buildCreateWorkspaceTxCore } from "../lib/txBuilders";
 
 const RATE_LIMIT_MS = 30_000;
-const MAINNET_RPC = "https://api.mainnet-beta.solana.com";
 
-export const createWorkspace = action({
+export const buildCreateWorkspaceTx = action({
   args: {
     name: v.string(),
     members: v.array(
@@ -20,14 +24,13 @@ export const createWorkspace = action({
       }),
     ),
   },
-  handler: async (ctx, args): Promise<{ workspaceId: string; multisigAddress: string; vaultAddress: string }> => {
-    // Auth check
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ serializedTx: string; createKey: string }> => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Unauthenticated");
-    }
+    if (!identity) throw new Error("Unauthenticated");
 
-    // Validate name
     const trimmedName = args.name.trim();
     if (trimmedName.length === 0) {
       throw new Error("Workspace name cannot be empty");
@@ -44,9 +47,7 @@ export const createWorkspace = action({
       );
     }
 
-    // Separate wallet and email members
     const walletMembers = args.members.filter((m) => m.type === "wallet");
-    const emailMembers = args.members.filter((m) => m.type === "email");
 
     // Validate wallet addresses
     for (const wm of walletMembers) {
@@ -67,30 +68,15 @@ export const createWorkspace = action({
     }
 
     const creatorWallet = new PublicKey(user.walletAddress);
-
-    // Get sponsor key from validated env - NEVER log or return this value
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
 
-    // Create Squads multisig on mainnet
-    const connection = new Connection(MAINNET_RPC, "confirmed");
+    const connection = new Connection(getRpcUrl(), "confirmed");
     const createKey = Keypair.generate();
     const [multisigPda] = multisig.getMultisigPda({
       createKey: createKey.publicKey,
     });
 
-    // Build multisig members: creator + wallet-type members
-    const msMembers: multisig.types.Member[] = [
-      {
-        key: creatorWallet,
-        permissions: multisig.types.Permissions.all(),
-      },
-      ...walletMembers.map((wm) => ({
-        key: new PublicKey(wm.value),
-        permissions: multisig.types.Permissions.all(),
-      })),
-    ];
-
-    // Squads protocol fee treasury (from on-chain program config)
+    // Squads protocol fee treasury
     const [programConfigPda] = multisig.getProgramConfigPda({});
     const programConfigInfo = await connection.getAccountInfo(programConfigPda);
     if (!programConfigInfo) {
@@ -101,31 +87,73 @@ export const createWorkspace = action({
     );
     const protocolTreasury = programConfig.treasury;
 
-    // Get blockhash for transaction
-    const { blockhash, lastValidBlockHeight } =
-      await connection.getLatestBlockhash();
+    const { blockhash } = await connection.getLatestBlockhash();
 
-    // Build the multisig create transaction
-    const tx = multisig.transactions.multisigCreateV2({
-      blockhash,
-      treasury: protocolTreasury,
-      createKey: createKey.publicKey,
-      creator: sponsorKeypair.publicKey,
+    const { tx } = buildCreateWorkspaceTxCore({
+      creatorWallet,
+      sponsorPublicKey: sponsorKeypair.publicKey,
+      walletMemberKeys: walletMembers.map((wm) => new PublicKey(wm.value)),
+      createKeyPublicKey: createKey.publicKey,
       multisigPda,
-      configAuthority: null,
-      threshold: 1,
-      members: msMembers,
-      timeLock: 0,
-      rentCollector: null,
+      treasury: protocolTreasury,
+      blockhash,
     });
 
-    // Sign with sponsor (payer) and createKey
+    // Partial-sign with sponsor (fee payer) and createKey (ephemeral)
+    // User signs on frontend with Privy wallet
     tx.sign([sponsorKeypair, createKey]);
 
-    // Send and confirm the transaction
+    const serializedTx = Buffer.from(tx.serialize()).toString("base64");
+
+    return {
+      serializedTx,
+      createKey: createKey.publicKey.toBase58(),
+    };
+  },
+});
+
+export const submitCreateWorkspaceTx = action({
+  args: {
+    name: v.string(),
+    members: v.array(
+      v.object({
+        type: v.union(v.literal("email"), v.literal("wallet")),
+        value: v.string(),
+      }),
+    ),
+    signedTx: v.string(),
+    createKey: v.string(),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ workspaceId: string; multisigAddress: string; vaultAddress: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    // Get creator's wallet
+    const user = await ctx.runQuery(
+      internal.internals.workspaceHelpers.getUserByToken,
+      { tokenIdentifier: identity.tokenIdentifier },
+    );
+    if (!user) throw new Error("User not found");
+
+    const creatorWallet = new PublicKey(user.walletAddress);
+
+    const connection = new Connection(getRpcUrl(), "confirmed");
+
+    const txBytes = Buffer.from(args.signedTx, "base64");
+    const { VersionedTransaction } = await import("@solana/web3.js");
+    const tx = VersionedTransaction.deserialize(txBytes);
+
+    const { blockhash, lastValidBlockHeight } =
+      await connection.getLatestBlockhash("confirmed");
+
     let signature: string;
     try {
-      signature = await connection.sendTransaction(tx, { skipPreflight: false });
+      signature = await connection.sendTransaction(tx, {
+        skipPreflight: false,
+      });
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unknown Solana error";
@@ -143,16 +171,23 @@ export const createWorkspace = action({
       throw new Error(`Multisig transaction failed to confirm: ${message}`);
     }
 
+    // On-chain confirmed — now store in DB
+    const createKeyPubkey = new PublicKey(args.createKey);
+    const [multisigPda] = multisig.getMultisigPda({
+      createKey: createKeyPubkey,
+    });
     const multisigAddress = multisigPda.toBase58();
     const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
     const vaultAddress = vaultPda.toBase58();
+
+    const walletMembers = args.members.filter((m) => m.type === "wallet");
+    const emailMembers = args.members.filter((m) => m.type === "email");
     const now = Date.now();
 
-    // Store workspace, members, and invites in Convex
     const workspaceId = await ctx.runMutation(
       internal.internals.workspaceHelpers.storeWorkspace,
       {
-        name: trimmedName,
+        name: args.name.trim(),
         multisigAddress,
         vaultAddress,
         creatorTokenIdentifier: identity.tokenIdentifier,

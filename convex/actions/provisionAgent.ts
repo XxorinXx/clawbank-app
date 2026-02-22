@@ -24,7 +24,9 @@ function generateConnectCode(): string {
 }
 
 export const provisionAgent = internalAction({
-  args: { agentId: v.id("agents") },
+  args: {
+    agentId: v.id("agents"),
+  },
   handler: async (ctx, args): Promise<void> => {
     // 1. Load agent record
     const agent = await ctx.runQuery(

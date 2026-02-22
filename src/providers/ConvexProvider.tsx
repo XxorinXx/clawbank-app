@@ -3,7 +3,9 @@ import { usePrivy } from '@privy-io/react-auth'
 import { useCallback, useMemo } from 'react'
 import { env } from '~/env'
 
-const convex = new ConvexReactClient(env.VITE_CONVEX_URL)
+const convex = new ConvexReactClient(env.VITE_CONVEX_URL, {
+  unsavedChangesWarning: false,
+})
 
 function useConvexAuth() {
   const { ready, authenticated, getAccessToken } = usePrivy()

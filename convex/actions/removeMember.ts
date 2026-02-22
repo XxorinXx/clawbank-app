@@ -4,58 +4,59 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import * as multisig from "@sqds/multisig";
-import { Connection, Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
+import { buildRemoveMemberTxCore } from "../lib/txBuilders";
 
-export const removeMember = action({
+export const buildRemoveMemberTx = action({
   args: {
     workspaceId: v.id("workspaces"),
     memberPublicKey: v.string(),
   },
-  handler: async (ctx, args): Promise<{ status: "executed" | "proposal_created" }> => {
+  handler: async (ctx, args): Promise<{ serializedTx: string }> => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Unauthenticated");
-    }
+    if (!identity) throw new Error("Unauthenticated");
 
     // Look up user's wallet
     const user = await ctx.runQuery(
       internal.internals.workspaceHelpers.getUserByToken,
       { tokenIdentifier: identity.tokenIdentifier },
     );
-    if (!user) {
-      throw new Error("User not found");
-    }
+    if (!user) throw new Error("User not found");
 
     // Cannot remove yourself
     if (user.walletAddress === args.memberPublicKey) {
       throw new Error("Cannot remove yourself from the workspace");
     }
 
-    // Look up workspace
     const workspace = await ctx.runQuery(
       internal.internals.workspaceHelpers.getWorkspaceById,
       { workspaceId: args.workspaceId },
     );
-    if (!workspace) {
-      throw new Error("Workspace not found");
-    }
+    if (!workspace) throw new Error("Workspace not found");
 
     const connection = new Connection(getRpcUrl(), "confirmed");
     const multisigPda = new PublicKey(workspace.multisigAddress);
     const memberToRemove = new PublicKey(args.memberPublicKey);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
-    const creatorKey = new PublicKey(user.walletAddress);
+    const userWallet = new PublicKey(user.walletAddress);
 
     // Read multisig to get current state
-    const multisigAccount = await multisig.accounts.Multisig.fromAccountAddress(
-      connection,
-      multisigPda,
-    );
+    const multisigAccount =
+      await multisig.accounts.Multisig.fromAccountAddress(
+        connection,
+        multisigPda,
+      );
 
     // Verify member exists on-chain
     const memberExists = multisigAccount.members.some(
-      (m: multisig.types.Member) => m.key.toBase58() === args.memberPublicKey,
+      (m: multisig.types.Member) =>
+        m.key.toBase58() === args.memberPublicKey,
     );
     if (!memberExists) {
       throw new Error("Member not found in on-chain multisig");
@@ -67,52 +68,56 @@ export const removeMember = action({
     }
 
     const currentTransactionIndex = Number(multisigAccount.transactionIndex);
-    const newTransactionIndex = BigInt(currentTransactionIndex + 1);
+    const { blockhash } = await connection.getLatestBlockhash();
 
-    // Build the config transaction instruction to remove the member
-    const removeIx = multisig.instructions.configTransactionCreate({
+    const { tx } = buildRemoveMemberTxCore({
+      userWallet,
+      sponsorPublicKey: sponsorKeypair.publicKey,
       multisigPda,
-      transactionIndex: newTransactionIndex,
-      creator: creatorKey,
-      actions: [{
-        __kind: "RemoveMember",
-        oldMember: memberToRemove,
-      }],
+      memberToRemove,
+      currentTransactionIndex,
+      blockhash,
     });
 
-    // Build the proposal create instruction
-    const proposalIx = multisig.instructions.proposalCreate({
-      multisigPda,
-      transactionIndex: newTransactionIndex,
-      creator: creatorKey,
-    });
+    // Partial-sign with sponsor (fee payer) — user signs on frontend
+    tx.sign([sponsorKeypair]);
 
-    // Build approve instruction (auto-approve since threshold=1 in v1)
-    const approveIx = multisig.instructions.proposalApprove({
-      multisigPda,
-      transactionIndex: newTransactionIndex,
-      member: creatorKey,
-    });
+    const serializedTx = Buffer.from(tx.serialize()).toString("base64");
+
+    return { serializedTx };
+  },
+});
+
+export const submitRemoveMemberTx = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+    memberPublicKey: v.string(),
+    signedTx: v.string(),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ txSignature: string }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const connection = new Connection(getRpcUrl(), "confirmed");
+
+    const txBytes = Buffer.from(args.signedTx, "base64");
+    const tx = VersionedTransaction.deserialize(txBytes);
 
     const { blockhash, lastValidBlockHeight } =
-      await connection.getLatestBlockhash();
-
-    // Build versioned transaction with all three instructions
-    const messageV0 = new TransactionMessage({
-      payerKey: sponsorKeypair.publicKey,
-      recentBlockhash: blockhash,
-      instructions: [removeIx, proposalIx, approveIx],
-    }).compileToV0Message();
-
-    const tx = new VersionedTransaction(messageV0);
-    tx.sign([sponsorKeypair]);
+      await connection.getLatestBlockhash("confirmed");
 
     let signature: string;
     try {
-      signature = await connection.sendTransaction(tx, { skipPreflight: false });
+      signature = await connection.sendTransaction(tx, {
+        skipPreflight: false,
+      });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to create member removal proposal: ${message}`);
+      const message =
+        err instanceof Error ? err.message : "Unknown Solana error";
+      throw new Error(`Failed to submit member removal tx: ${message}`);
     }
 
     try {
@@ -121,26 +126,42 @@ export const removeMember = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown confirmation error";
-      throw new Error(`Member removal proposal failed to confirm: ${message}`);
+      const message =
+        err instanceof Error ? err.message : "Unknown confirmation error";
+      throw new Error(
+        `Member removal transaction failed to confirm: ${message}`,
+      );
     }
 
-    // Reconcile DB: remove the member
+    // On-chain confirmed — now reconcile DB
+    const workspace = await ctx.runQuery(
+      internal.internals.workspaceHelpers.getWorkspaceById,
+      { workspaceId: args.workspaceId },
+    );
+    if (!workspace) throw new Error("Workspace not found");
+
+    const multisigPda = new PublicKey(workspace.multisigAddress);
+
+    // Read the updated on-chain multisig state
+    const multisigAccount =
+      await multisig.accounts.Multisig.fromAccountAddress(
+        connection,
+        multisigPda,
+      );
+
     await ctx.runMutation(
       internal.internals.workspaceHelpers.reconcileMembersFromOnchain,
       {
         workspaceId: args.workspaceId,
-        onchainMembers: multisigAccount.members
-          .filter((m: multisig.types.Member) => m.key.toBase58() !== args.memberPublicKey)
-          .map((m: multisig.types.Member) => ({
+        onchainMembers: multisigAccount.members.map(
+          (m: multisig.types.Member) => ({
             walletAddress: m.key.toBase58(),
             role: "member" as const,
-          })),
+          }),
+        ),
       },
     );
 
-    // With threshold=1, the proposal auto-executes
-    const threshold = multisigAccount.threshold;
-    return { status: threshold <= 1 ? "executed" : "proposal_created" };
+    return { txSignature: signature };
   },
 });

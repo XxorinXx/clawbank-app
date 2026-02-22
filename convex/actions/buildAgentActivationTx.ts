@@ -11,19 +11,12 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
-import { buildSpendingLimitUpdateTxCore } from "../lib/txBuilders";
+import { buildAgentActivationTxCore } from "../lib/txBuilders";
 
-export const buildSpendingLimitUpdateTx = action({
+export const buildAgentActivationTx = action({
   args: {
     agentId: v.id("agents"),
     workspaceId: v.id("workspaces"),
-    tokenMint: v.string(),
-    limitAmount: v.number(),
-    periodType: v.union(
-      v.literal("daily"),
-      v.literal("weekly"),
-      v.literal("monthly"),
-    ),
   },
   handler: async (
     ctx,
@@ -32,19 +25,21 @@ export const buildSpendingLimitUpdateTx = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 
-    // Look up user's wallet
+    // Look up user's wallet address
     const user = await ctx.runQuery(
       internal.internals.workspaceHelpers.getUserByToken,
       { tokenIdentifier: identity.tokenIdentifier },
     );
     if (!user) throw new Error("User not found");
 
+    // Load workspace for multisig PDA
     const workspace = await ctx.runQuery(
       internal.internals.workspaceHelpers.getWorkspaceById,
       { workspaceId: args.workspaceId },
     );
     if (!workspace) throw new Error("Workspace not found");
 
+    // Load agent for public key
     const agent = await ctx.runQuery(
       internal.internals.agentHelpers.getAgentById,
       { agentId: args.agentId },
@@ -53,17 +48,20 @@ export const buildSpendingLimitUpdateTx = action({
       throw new Error("Agent not found or not provisioned");
     }
 
-    // Get existing spending limit to find old on-chain key
+    // Load spending limit for token/amount/period
     const limits = await ctx.runQuery(
       internal.internals.agentHelpers.getSpendingLimitsByAgent,
       { agentId: args.agentId },
     );
-    const existingLimit = limits[0];
-    const oldOnchainCreateKey = existingLimit?.onchainCreateKey;
+    if (limits.length === 0) {
+      throw new Error("No spending limit configured for agent");
+    }
+    const limit = limits[0];
 
+    // Get token decimals
     const tokenMeta = await ctx.runQuery(
       internal.internals.agentHelpers.getTokenMetadata,
-      { mint: args.tokenMint },
+      { mint: limit.tokenMint },
     );
     const decimals = tokenMeta?.decimals ?? 9;
 
@@ -73,29 +71,29 @@ export const buildSpendingLimitUpdateTx = action({
     const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);
 
+    // Read current multisig transaction index
     const multisigAccount =
       await multisig.accounts.Multisig.fromAccountAddress(
         connection,
         multisigPda,
       );
-
     const currentTransactionIndex = Number(multisigAccount.transactionIndex);
 
+    // Generate createKey for spending limit PDA
     const createKey = Keypair.generate();
     const { blockhash } = await connection.getLatestBlockhash();
 
-    const { tx } = buildSpendingLimitUpdateTxCore({
+    const { tx } = buildAgentActivationTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
       multisigPda,
       agentPubkey,
       currentTransactionIndex,
-      oldOnchainCreateKey: oldOnchainCreateKey ?? null,
       createKeyPublicKey: createKey.publicKey,
-      tokenMint: new PublicKey(args.tokenMint),
-      limitAmount: args.limitAmount,
+      tokenMint: new PublicKey(limit.tokenMint),
+      limitAmount: limit.limitAmount,
       decimals,
-      periodType: args.periodType,
+      periodType: limit.periodType,
       blockhash,
     });
 
@@ -111,19 +109,11 @@ export const buildSpendingLimitUpdateTx = action({
   },
 });
 
-export const submitSpendingLimitUpdateTx = action({
+export const submitAgentActivationTx = action({
   args: {
     agentId: v.id("agents"),
-    workspaceId: v.id("workspaces"),
     signedTx: v.string(),
     createKey: v.string(),
-    tokenMint: v.string(),
-    limitAmount: v.number(),
-    periodType: v.union(
-      v.literal("daily"),
-      v.literal("weekly"),
-      v.literal("monthly"),
-    ),
   },
   handler: async (ctx, args): Promise<{ txSignature: string }> => {
     const identity = await ctx.auth.getUserIdentity();
@@ -145,43 +135,48 @@ export const submitSpendingLimitUpdateTx = action({
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to update spending limit on-chain: ${message}`);
+      throw new Error(`Failed to submit activation tx: ${message}`);
     }
 
-    try {
-      await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        "confirmed",
-      );
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown confirmation error";
-      throw new Error(
-        `Spending limit transaction failed to confirm: ${message}`,
-      );
-    }
+    await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed",
+    );
 
-    // On-chain confirmed — now update DB
-    // Update spending limit record
+    // On-chain tx confirmed — now set agent to "active" (atomic: only active after on-chain success)
     await ctx.runMutation(
-      internal.internals.agentHelpers.updateSpendingLimitRecord,
+      internal.internals.agentHelpers.updateAgentStatus,
+      { agentId: args.agentId, status: "active" },
+    );
+
+    // Store on-chain state
+    await ctx.runMutation(
+      internal.internals.agentHelpers.updateSpendingLimitOnchainKey,
       {
         agentId: args.agentId,
-        workspaceId: args.workspaceId,
-        tokenMint: args.tokenMint,
-        limitAmount: args.limitAmount,
-        periodType: args.periodType,
+        workspaceId: (
+          await ctx.runQuery(
+            internal.internals.agentHelpers.getAgentById,
+            { agentId: args.agentId },
+          )
+        )!.workspaceId,
         onchainCreateKey: args.createKey,
       },
     );
 
     // Log activity
-    await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
-      workspaceId: args.workspaceId,
-      agentId: args.agentId,
-      action: "limit_updated_onchain",
-      txSignature: signature,
-    });
+    const agent = await ctx.runQuery(
+      internal.internals.agentHelpers.getAgentById,
+      { agentId: args.agentId },
+    );
+    if (agent) {
+      await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
+        workspaceId: agent.workspaceId,
+        agentId: args.agentId,
+        action: "agent_activated_onchain",
+        txSignature: signature,
+      });
+    }
 
     return { txSignature: signature };
   },

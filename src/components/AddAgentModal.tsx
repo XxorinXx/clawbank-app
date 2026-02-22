@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Loader2, Copy, Check, CheckCircle, ChevronDown } from "lucide-react";
 import { useMutation, useQuery, useAction } from "convex/react";
+import { useSolanaWallets } from "@privy-io/react-auth";
+import { VersionedTransaction } from "@solana/web3.js";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Modal } from "~/components/Modal";
@@ -60,6 +62,13 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     api.actions.generateConnectCode.generateConnectCode,
   );
   const { data: balanceData } = useWorkspaceBalance(workspaceId);
+  const { wallets: solanaWallets } = useSolanaWallets();
+  const buildActivationTx = useAction(
+    api.actions.buildAgentActivationTx.buildAgentActivationTx,
+  );
+  const submitActivationTx = useAction(
+    api.actions.buildAgentActivationTx.submitAgentActivationTx,
+  );
 
   // Step state
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -82,6 +91,11 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
   const [countdown, setCountdown] = useState(0);
   const [codeExpired, setCodeExpired] = useState(false);
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
+
+  // On-chain activation state
+  const [isActivating, setIsActivating] = useState(false);
+  const [activationError, setActivationError] = useState("");
+  const activatingRef = useRef(false);
 
   // Reactive queries for step 2
   const connectCodeData = useQuery(
@@ -137,13 +151,65 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     return () => clearInterval(interval);
   }, [step, connectCodeData?.expiresAt]);
 
-  // Auto-advance to step 3 when agent becomes active
-  useEffect(() => {
-    if (step === 2 && currentAgent?.status === "active") {
+  // On-chain activation: build tx, sign with user wallet, submit, confirm
+  const handleActivation = useCallback(async () => {
+    if (!agentId) return;
+    setIsActivating(true);
+    setActivationError("");
+
+    try {
+      const { serializedTx, createKey } = await buildActivationTx({
+        agentId,
+        workspaceId,
+      });
+
+      // Deserialize the sponsor-signed tx and sign with user wallet
+      const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0));
+      const tx = VersionedTransaction.deserialize(txBytes);
+
+      const wallet = solanaWallets[0];
+      if (!wallet) throw new Error("No Solana wallet found");
+      const signedTx = await wallet.signTransaction(tx);
+
+      // Send back to backend for submission via Helius RPC
+      const signedBase64 = btoa(
+        String.fromCharCode(...signedTx.serialize()),
+      );
+
+      await submitActivationTx({
+        agentId,
+        signedTx: signedBase64,
+        createKey,
+      });
+
       setDirection("forward");
       setStep(3);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to activate agent on-chain";
+      setActivationError(message);
+    } finally {
+      setIsActivating(false);
     }
-  }, [step, currentAgent?.status]);
+  }, [agentId, workspaceId, solanaWallets, buildActivationTx, submitActivationTx]);
+
+  const handleRetryActivation = useCallback(() => {
+    activatingRef.current = false;
+    setActivationError("");
+  }, []);
+
+  // Trigger on-chain activation when agent connects
+  useEffect(() => {
+    if (
+      step === 2 &&
+      currentAgent?.status === "connected" &&
+      !activatingRef.current &&
+      !activationError
+    ) {
+      activatingRef.current = true;
+      void handleActivation();
+    }
+  }, [step, currentAgent?.status, activationError, handleActivation]);
 
   const resetState = useCallback(() => {
     setStep(1);
@@ -161,13 +227,26 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     setCodeExpired(false);
     setIsGeneratingCode(false);
     setIsTokenDropdownOpen(false);
+    setIsActivating(false);
+    setActivationError("");
+    activatingRef.current = false;
   }, []);
 
-  const handleClose = useCallback(() => {
+  const revokeAgent = useMutation(api.mutations.agents.revoke);
+
+  const handleClose = useCallback(async () => {
     if (isSubmitting) return;
+    // If closing during step 2 (connect or on-chain activation), revoke the agent
+    if (step === 2 && agentId) {
+      try {
+        await revokeAgent({ agentId });
+      } catch {
+        // Best-effort cleanup
+      }
+    }
     onClose();
     resetState();
-  }, [onClose, resetState, isSubmitting]);
+  }, [onClose, resetState, isSubmitting, step, agentId, revokeAgent]);
 
   const isNextEnabled = name.trim().length > 0 && tokenMint.length > 0 && parseFloat(amount) > 0;
 
@@ -227,7 +306,7 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
   const selectedToken = balanceData?.tokens.find((t) => t.mint === tokenMint);
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} preventClose={isSubmitting || step === 2}>
+    <Modal isOpen={isOpen} onClose={handleClose} preventClose={isSubmitting}>
       <AnimatePresence mode="wait" initial={false}>
         {/* Step 1 — Name & Budget */}
         {step === 1 && (
@@ -413,13 +492,40 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
             transition={{ duration: 0.25, ease: "easeInOut" }}
           >
             <h2 className="mb-1 text-xl font-bold text-gray-900">
-              Connect Your Agent
+              {isActivating || activationError
+                ? "Activating Agent"
+                : "Connect Your Agent"}
             </h2>
             <p className="mb-6 text-sm text-gray-500">
-              Run this in your agent's terminal — that's it.
+              {isActivating
+                ? "Setting up on-chain permissions..."
+                : activationError
+                  ? "There was a problem during activation."
+                  : "Run this in your agent's terminal — that's it."}
             </p>
 
-            {connectCodeData?.connectCode && !codeExpired ? (
+            {isActivating ? (
+              <div className="flex flex-col items-center gap-3 py-12">
+                <Loader2 size={28} className="animate-spin text-gray-400" />
+                <span className="text-sm text-gray-500">
+                  This may take a few seconds...
+                </span>
+              </div>
+            ) : activationError ? (
+              <div className="flex flex-col items-center gap-4 py-8">
+                <p className="text-center text-sm text-red-500">
+                  {activationError}
+                </p>
+                <motion.button
+                  className="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-2.5 font-medium text-white transition-colors hover:bg-gray-800"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleRetryActivation}
+                >
+                  Retry
+                </motion.button>
+              </div>
+            ) : connectCodeData?.connectCode && !codeExpired ? (
               <>
                 {/* CLI command */}
                 <div className="rounded-xl bg-gray-50 px-4 py-3">
@@ -518,7 +624,7 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
             </motion.div>
 
             <h2 className="mt-4 text-xl font-bold text-gray-900">
-              Agent Connected
+              Agent Activated
             </h2>
 
             <div className="mt-4 flex flex-col gap-1">

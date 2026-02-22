@@ -3,6 +3,7 @@ import { useAction } from "convex/react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
+import { useMemo } from "react";
 
 interface OnchainMember {
   pubkey: string;
@@ -29,6 +30,17 @@ export function useWorkspaceMembers(workspaceId: Id<"workspaces"> | null) {
     api.queries.getWorkspaceMembers.getWorkspaceMembers,
     workspaceId ? { workspaceId } : "skip",
   );
+
+  const agents = useConvexQuery(
+    api.queries.agents.list,
+    workspaceId ? { workspaceId } : "skip",
+  );
+
+  // Collect agent public keys to filter them out of the members list
+  const agentPubkeys = useMemo(() => {
+    if (!agents) return new Set<string>();
+    return new Set(agents.map((a) => a.publicKey).filter(Boolean) as string[]);
+  }, [agents]);
 
   const fetchOnchain = useAction(
     api.actions.fetchMembersOnchain.fetchMembersOnchain,
@@ -83,8 +95,11 @@ export function useWorkspaceMembers(workspaceId: Id<"workspaces"> | null) {
     }
   }
 
+  // Filter out agent wallets — they show in the Agents tab, not Humans
+  const humanMembers = members.filter((m) => !agentPubkeys.has(m.walletAddress));
+
   return {
-    members,
+    members: humanMembers,
     invites: dbData?.invites ?? [],
     isLoading: dbData === undefined,
     isSyncing: onchainQuery.isLoading || onchainQuery.isFetching,

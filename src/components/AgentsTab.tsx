@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
-import { Bot, Plus, Settings2 } from 'lucide-react'
+import { Bot, Loader2, Plus, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useQuery, useMutation } from 'convex/react'
+import { useQuery, useAction } from 'convex/react'
+import { useSolanaWallets } from '@privy-io/react-auth'
+import { VersionedTransaction } from '@solana/web3.js'
 import { api } from '../../convex/_generated/api'
 import { Id } from '../../convex/_generated/dataModel'
 import { EditBudgetModal } from './EditBudgetModal'
@@ -77,8 +79,13 @@ interface AgentsTabProps {
 
 export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
   const agents = useQuery(api.queries.agents.list, { workspaceId })
-  const revokeAgent = useMutation(api.mutations.agents.revoke)
+  const { wallets: solanaWallets } = useSolanaWallets()
+  const buildRevocationTx = useAction(api.actions.buildAgentRevocationTx.buildAgentRevocationTx)
+  const submitRevocationTx = useAction(api.actions.buildAgentRevocationTx.submitAgentRevocationTx)
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
+  const [revokingAgentId, setRevokingAgentId] = useState<Id<"agents"> | null>(null)
+
+  const activeAgents = agents?.filter(a => a.status === 'active') ?? []
 
   // Loading skeleton
   if (agents === undefined) {
@@ -98,7 +105,7 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
   }
 
   // Empty state
-  if (agents.length === 0) {
+  if (activeAgents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-gray-400">
         <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
@@ -125,17 +132,35 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
     )
     if (!confirmed) return
 
+    setRevokingAgentId(agentId)
     try {
-      await revokeAgent({ agentId })
+      const { serializedTx } = await buildRevocationTx({ agentId, workspaceId })
+
+      if (serializedTx) {
+        const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0))
+        const tx = VersionedTransaction.deserialize(txBytes)
+
+        const wallet = solanaWallets[0]
+        if (!wallet) throw new Error('No Solana wallet found')
+        const signedTx = await wallet.signTransaction(tx)
+        const signedBase64 = btoa(String.fromCharCode(...signedTx.serialize()))
+
+        await submitRevocationTx({ agentId, signedTx: signedBase64 })
+      } else {
+        await submitRevocationTx({ agentId, signedTx: '' })
+      }
+
       toast.success(`${agentName} disconnected`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to disconnect agent')
+    } finally {
+      setRevokingAgentId(null)
     }
   }
 
   return (
     <div className="flex flex-col gap-2">
-      {(agents as Agent[]).map((agent) => {
+      {(activeAgents as Agent[]).map((agent) => {
         const color = getAgentColor(agent.name)
         const limit = agent.limits[0]
 
@@ -186,11 +211,13 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
                     <Settings2 size={16} />
                   </motion.button>
                   <motion.button
-                    className="cursor-pointer rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20"
+                    className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50"
                     whileTap={{ scale: 0.95 }}
                     onClick={() => void handleDisconnect(agent._id, agent.name)}
+                    disabled={revokingAgentId === agent._id}
                   >
-                    Disconnect
+                    {revokingAgentId === agent._id && <Loader2 size={12} className="animate-spin" />}
+                    {revokingAgentId === agent._id ? 'Disconnecting…' : 'Disconnect'}
                   </motion.button>
                 </>
               )}

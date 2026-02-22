@@ -79,12 +79,12 @@ export const exchangeConnectCode = action({
       },
     );
 
-    // Update agent status to active and clear the connect code
+    // Update agent status to connected (not yet active — active only after on-chain tx confirms)
     await ctx.runMutation(
       internal.internals.agentHelpers.updateAgentStatus,
       {
         agentId: session.agentId,
-        status: "active",
+        status: "connected",
         clearConnectCode: true,
       },
     );

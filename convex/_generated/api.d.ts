@@ -9,6 +9,8 @@
  */
 
 import type * as actions_agentAuth from "../actions/agentAuth.js";
+import type * as actions_buildAgentActivationTx from "../actions/buildAgentActivationTx.js";
+import type * as actions_buildAgentRevocationTx from "../actions/buildAgentRevocationTx.js";
 import type * as actions_createWorkspace from "../actions/createWorkspace.js";
 import type * as actions_fetchMembersOnchain from "../actions/fetchMembersOnchain.js";
 import type * as actions_fetchTokenBalances from "../actions/fetchTokenBalances.js";
@@ -25,6 +27,7 @@ import type * as env from "../env.js";
 import type * as internals_agentHelpers from "../internals/agentHelpers.js";
 import type * as internals_cacheHelpers from "../internals/cacheHelpers.js";
 import type * as internals_workspaceHelpers from "../internals/workspaceHelpers.js";
+import type * as lib_txBuilders from "../lib/txBuilders.js";
 import type * as mutations_agents from "../mutations/agents.js";
 import type * as queries_agents from "../queries/agents.js";
 import type * as queries_getWorkspaceMembers from "../queries/getWorkspaceMembers.js";
@@ -39,6 +42,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/agentAuth": typeof actions_agentAuth;
+  "actions/buildAgentActivationTx": typeof actions_buildAgentActivationTx;
+  "actions/buildAgentRevocationTx": typeof actions_buildAgentRevocationTx;
   "actions/createWorkspace": typeof actions_createWorkspace;
   "actions/fetchMembersOnchain": typeof actions_fetchMembersOnchain;
   "actions/fetchTokenBalances": typeof actions_fetchTokenBalances;
@@ -55,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "internals/agentHelpers": typeof internals_agentHelpers;
   "internals/cacheHelpers": typeof internals_cacheHelpers;
   "internals/workspaceHelpers": typeof internals_workspaceHelpers;
+  "lib/txBuilders": typeof lib_txBuilders;
   "mutations/agents": typeof mutations_agents;
   "queries/agents": typeof queries_agents;
   "queries/getWorkspaceMembers": typeof queries_getWorkspaceMembers;
