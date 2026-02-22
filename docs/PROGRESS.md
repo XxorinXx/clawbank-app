@@ -171,3 +171,53 @@ DONE: 001F
 4 agents spawned in parallel (architect, backend, pmux, qa) — each wrote its deliverable independently. All completed successfully.
 
 DONE: 0020
+
+## 0021 QA Notes
+
+### Checks (scripts/checks.sh)
+
+All 4 checks pass:
+- **Lint**: PASS (0 errors, 0 warnings)
+- **Typecheck**: PASS (fixed circular type inference in `agentAuth.ts` by adding explicit return types `ExchangeResult` and `StatusResult`)
+- **Build**: PASS
+- **Tests**: PASS (no tests yet)
+
+### Gate 0
+
+docs/AGENT_INSTALL.md updated: replaced `npx @clawbank/cli` with `node scripts/agent-connect.mjs CODE`. Matches actual CLI command implemented in `scripts/agent-connect.mjs`.
+
+### Edge Cases (6)
+
+1. **Expired connect code**: PASS — `agentAuth.ts:28-31` checks `session.expiresAt <= Date.now()` and throws "Invalid or expired connect code".
+2. **Reused connect code**: PASS — `agentAuth.ts:44-47` deletes the connect-code session after use via `deleteSession`. Second attempt finds no session → rejected.
+3. **Turnkey API failure**: PASS — `provisionAgent.ts:69-82` wraps Turnkey API call in try/catch, logs `action: "provision_failed"` to activity_log, throws descriptive error. Agent stays in "provisioning" status.
+4. **Unauthorized workspace create**: PASS — `mutations/agents.ts:49-58` verifies user is a workspace_member via by_workspace index. Non-members get "Not a member of this workspace".
+5. **Missing budget fields**: PASS — `mutations/agents.ts:26-36` validates name non-empty (trim), max 32 chars, and limitAmount > 0. All produce specific error messages.
+6. **CLI invalid code format**: PASS — `agent-connect.mjs:144-149` validates code against regex `/^[A-Z0-9]{6}$/`. Invalid format exits with "Invalid code format" message.
+
+### Security Checks (5)
+
+1. **No console.log in backend**: VERIFIED — Grepped all `convex/*.ts` files for `console.log/warn/error` — zero matches. No secrets leaked via logging.
+2. **Tokens hashed before storage**: VERIFIED — Connect codes hashed with SHA-256 (`crypto.createHash("sha256")`) in `provisionAgent.ts:86-89` and `agentAuth.ts:14-17`. Session tokens hashed in `agentAuth.ts:37-38`. Raw values never stored in DB — only `tokenHash` field in `agent_sessions`.
+3. **Connect code single-use + TTL**: VERIFIED — Session row deleted immediately after successful exchange (`agentAuth.ts:44-47`). TTL = 10 minutes (`provisionAgent.ts:14`). Expired codes rejected at `agentAuth.ts:28-31`.
+4. **Privy auth on all human-facing functions**: VERIFIED — `agents.create`, `agents.revoke` (mutations), `agents.list`, `agents.getConnectCode` (queries), `generateConnectCode` (action) all call `ctx.auth.getUserIdentity()` and throw "Unauthenticated" if null.
+5. **agents.revoke deletes all sessions**: VERIFIED — `mutations/agents.ts:121-127` queries `agent_sessions` by `by_agentId` index and deletes every session. Also sets status to "revoked" and clears connectCode fields.
+
+### Architecture Notes
+
+- **Schema**: 4 new tables added (agents, agent_sessions, spending_limits, activity_log) with proper indexes per ARCH_AGENT_CONNECT.md spec.
+- **Turnkey SDK**: `@turnkey/sdk-server` used for wallet creation. Creates Ed25519 Solana wallets with BIP32 path `m/44'/501'/0'/0'`.
+- **Provision flow**: `agents.create` mutation → schedules `provisionAgent` internal action → Turnkey wallet creation → connect code generation → activity log.
+- **Auth flow**: Connect code (6 chars, 10 min TTL) → `exchangeConnectCode` action → session token (32 bytes, 24h TTL) → `agentStatus` action for verification.
+- **Frontend**: 3-step modal (Name & Budget → Connect Code → Done) with reactive Convex queries for real-time connect code display and auto-advance on agent activation.
+- **CLI**: `scripts/agent-connect.mjs` — standalone ESM script, no extra deps, writes `.env`, retry logic, validates code format.
+- **Env helpers**: `getTurnkeyApiPublicKey()`, `getTurnkeyApiPrivateKey()`, `getTurnkeyOrgId()`, `getSessionSecret()` added to `convex/env.ts`.
+
+### Team Execution
+
+8 agents spawned across 2 waves:
+- Wave 1 (4 agents): backend-mutations, backend-turnkey, backend-auth, backend-queries — all backend tasks in parallel
+- Wave 2 (3 agents): frontend-modal, frontend-agents-tab, cli-script — frontend + CLI in parallel
+- Lead handled: Gate 0 doc, schema, env helpers, QA, type fixes, coordination
+
+DONE: 0021

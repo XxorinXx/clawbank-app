@@ -2,6 +2,8 @@ import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Loader2, X } from "lucide-react";
 import { useAction } from "convex/react";
+import { useSolanaWallets } from "@privy-io/react-auth";
+import { VersionedTransaction } from "@solana/web3.js";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 import { Modal } from "~/components/Modal";
@@ -46,7 +48,9 @@ const slideVariants = {
 };
 
 export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalProps) {
-  const createWorkspace = useAction(api.actions.createWorkspace.createWorkspace);
+  const buildCreateWorkspaceTx = useAction(api.actions.createWorkspace.buildCreateWorkspaceTx);
+  const submitCreateWorkspaceTx = useAction(api.actions.createWorkspace.submitCreateWorkspaceTx);
+  const { wallets: solanaWallets } = useSolanaWallets();
   const [step, setStep] = useState<1 | 2>(1);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [name, setName] = useState("");
@@ -55,6 +59,7 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
   const [memberError, setMemberError] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("");
 
   const resetState = useCallback(() => {
     setStep(1);
@@ -65,6 +70,7 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
     setMemberError("");
     setMembers([]);
     setIsSubmitting(false);
+    setSubmitStatus("");
   }, []);
 
   const handleClose = useCallback(() => {
@@ -115,11 +121,35 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
 
   const handleSubmit = useCallback(async () => {
     setIsSubmitting(true);
+    setSubmitStatus("Building transaction...");
     try {
-      await createWorkspace({
+      const memberArgs = members.map((m) => ({ type: m.type, value: m.value }));
+
+      // Step 1: Build the transaction (server-side)
+      const { serializedTx, createKey } = await buildCreateWorkspaceTx({
         name: name.trim(),
-        members: members.map((m) => ({ type: m.type, value: m.value })),
+        members: memberArgs,
       });
+
+      // Step 2: Sign with user's Privy wallet
+      setSubmitStatus("Signing transaction...");
+      const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0));
+      const tx = VersionedTransaction.deserialize(txBytes);
+
+      const wallet = solanaWallets[0];
+      if (!wallet) throw new Error("No Solana wallet found");
+      const signedTx = await wallet.signTransaction(tx);
+      const signedBase64 = btoa(String.fromCharCode(...signedTx.serialize()));
+
+      // Step 3: Submit (server sends on-chain, then stores in DB)
+      setSubmitStatus("Submitting on-chain...");
+      await submitCreateWorkspaceTx({
+        name: name.trim(),
+        members: memberArgs,
+        signedTx: signedBase64,
+        createKey,
+      });
+
       toast.success("Workspace created");
       onClose();
       resetState();
@@ -127,8 +157,9 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
       const message = err instanceof Error ? err.message : "Failed to create workspace";
       toast.error(message);
       setIsSubmitting(false);
+      setSubmitStatus("");
     }
-  }, [name, members, createWorkspace, onClose, resetState]);
+  }, [name, members, buildCreateWorkspaceTx, submitCreateWorkspaceTx, solanaWallets, onClose, resetState]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -282,7 +313,7 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
                 disabled={isSubmitting}
               >
                 {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                {isSubmitting ? "Creating..." : "Create workspace"}
+                {isSubmitting ? submitStatus || "Creating..." : "Create workspace"}
               </motion.button>
             </div>
           </motion.div>

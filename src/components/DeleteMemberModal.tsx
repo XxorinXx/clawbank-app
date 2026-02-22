@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { motion } from 'motion/react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useAction } from 'convex/react'
+import { useSolanaWallets } from '@privy-io/react-auth'
+import { VersionedTransaction } from '@solana/web3.js'
 import { toast } from 'sonner'
 import { Modal } from './Modal'
 import { api } from '../../convex/_generated/api'
 import { Id } from '../../convex/_generated/dataModel'
 
-type FlowState = 'confirming' | 'submitting' | 'error'
+type FlowState = 'confirming' | 'building' | 'signing' | 'submitting' | 'error'
 
 function truncateAddress(address: string): string {
   if (address.length <= 12) return address
@@ -29,10 +31,14 @@ export function DeleteMemberModal({
 }: DeleteMemberModalProps) {
   const [state, setState] = useState<FlowState>('confirming')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const removeMember = useAction(api.actions.removeMember.removeMember)
+  const buildRemoveMemberTx = useAction(api.actions.removeMember.buildRemoveMemberTx)
+  const submitRemoveMemberTx = useAction(api.actions.removeMember.submitRemoveMemberTx)
+  const { wallets: solanaWallets } = useSolanaWallets()
+
+  const isProcessing = state === 'building' || state === 'signing' || state === 'submitting'
 
   const handleClose = () => {
-    if (state === 'submitting') return
+    if (isProcessing) return
     setState('confirming')
     setErrorMsg(null)
     onClose()
@@ -40,21 +46,35 @@ export function DeleteMemberModal({
 
   const handleConfirm = async () => {
     if (!memberAddress) return
-    setState('submitting')
+    setState('building')
     setErrorMsg(null)
 
     try {
-      const result = await removeMember({
+      // Step 1: Build the transaction
+      const { serializedTx } = await buildRemoveMemberTx({
         workspaceId,
         memberPublicKey: memberAddress,
       })
 
-      if (result.status === 'executed') {
-        toast.success('Member removed successfully')
-      } else {
-        toast.success('Removal proposal created — awaiting approval')
-      }
+      // Step 2: Sign with user's Privy wallet
+      setState('signing')
+      const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0))
+      const tx = VersionedTransaction.deserialize(txBytes)
 
+      const wallet = solanaWallets[0]
+      if (!wallet) throw new Error('No Solana wallet found')
+      const signedTx = await wallet.signTransaction(tx)
+      const signedBase64 = btoa(String.fromCharCode(...signedTx.serialize()))
+
+      // Step 3: Submit on-chain + reconcile DB
+      setState('submitting')
+      await submitRemoveMemberTx({
+        workspaceId,
+        memberPublicKey: memberAddress,
+        signedTx: signedBase64,
+      })
+
+      toast.success('Member removed successfully')
       setState('confirming')
       onClose()
     } catch (err: unknown) {
@@ -64,11 +84,19 @@ export function DeleteMemberModal({
     }
   }
 
+  const statusLabel = state === 'building'
+    ? 'Building...'
+    : state === 'signing'
+      ? 'Signing...'
+      : state === 'submitting'
+        ? 'Removing...'
+        : 'Remove'
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      preventClose={state === 'submitting'}
+      preventClose={isProcessing}
       maxWidth="max-w-sm"
     >
       <div className="flex flex-col items-center text-center">
@@ -81,7 +109,7 @@ export function DeleteMemberModal({
         </h3>
 
         <p className="mb-6 text-sm text-gray-500">
-          This will create a proposal to remove{' '}
+          This will remove{' '}
           <span className="font-mono font-semibold text-gray-700">
             {memberAddress ? truncateAddress(memberAddress) : ''}
           </span>{' '}
@@ -100,20 +128,20 @@ export function DeleteMemberModal({
             className="flex-1 cursor-pointer rounded-full bg-gray-100 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200"
             whileTap={{ scale: 0.97 }}
             onClick={handleClose}
-            disabled={state === 'submitting'}
+            disabled={isProcessing}
           >
             Cancel
           </motion.button>
           <motion.button
             className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-red-500 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-            whileTap={state === 'submitting' ? {} : { scale: 0.97 }}
+            whileTap={isProcessing ? {} : { scale: 0.97 }}
             onClick={() => void handleConfirm()}
-            disabled={state === 'submitting'}
+            disabled={isProcessing}
           >
-            {state === 'submitting' ? (
+            {isProcessing ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Removing...
+                {statusLabel}
               </>
             ) : (
               'Remove'

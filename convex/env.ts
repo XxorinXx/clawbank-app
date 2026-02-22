@@ -22,6 +22,30 @@ export function getJupiterApiKey(): string {
   return requireEnv("JUPITER_API_KEY");
 }
 
+export function getTurnkeyApiPublicKey(): string {
+  return requireEnv("TURNKEY_API_PUBLIC_KEY");
+}
+
+/**
+ * Returns the Turnkey API private key for request stamping.
+ * NEVER log, return to client, or include in error messages.
+ */
+export function getTurnkeyApiPrivateKey(): string {
+  return requireEnv("TURNKEY_API_PRIVATE_KEY");
+}
+
+export function getTurnkeyOrgId(): string {
+  return requireEnv("TURNKEY_ORGANIZATION_ID");
+}
+
+/**
+ * Returns the HMAC secret used for hashing session tokens and connect codes.
+ * NEVER log, return to client, or include in error messages.
+ */
+export function getSessionSecret(): string {
+  return requireEnv("SESSION_SECRET");
+}
+
 /**
  * Returns the sponsor private key bytes decoded from bs58.
  * NEVER log, return to client, or include in error messages.

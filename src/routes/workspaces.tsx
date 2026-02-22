@@ -16,6 +16,8 @@ import { TokenListModal } from '~/components/TokenListModal'
 import { DrawerTabs, type TabItem } from '~/components/DrawerTabs'
 import { TabPlaceholder } from '~/components/TabPlaceholder'
 import { MembersTab } from '~/components/MembersTab'
+import { AgentsTab } from '~/components/AgentsTab'
+import { AddAgentModal } from '~/components/AddAgentModal'
 import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
 import { Id } from '../../convex/_generated/dataModel'
 
@@ -62,6 +64,7 @@ function WorkspacesPage() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<Id<"workspaces"> | null>(null)
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('humans')
+  const [isAddAgentOpen, setIsAddAgentOpen] = useState(false)
 
   const workspaces = useQuery(
     api.queries.listUserWorkspaces.listUserWorkspaces,
@@ -235,6 +238,9 @@ function WorkspacesPage() {
           onCloseTokenModal={() => setIsTokenModalOpen(false)}
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          isAddAgentOpen={isAddAgentOpen}
+          onOpenAddAgent={() => setIsAddAgentOpen(true)}
+          onCloseAddAgent={() => setIsAddAgentOpen(false)}
           onClose={() => {
             setSelectedWorkspaceId(null)
             setIsTokenModalOpen(false)
@@ -275,6 +281,9 @@ function WorkspaceDrawer({
   onCloseTokenModal,
   activeTab,
   onTabChange,
+  isAddAgentOpen,
+  onOpenAddAgent,
+  onCloseAddAgent,
   onClose,
 }: {
   workspaceId: Id<"workspaces">
@@ -283,6 +292,9 @@ function WorkspaceDrawer({
   onCloseTokenModal: () => void
   activeTab: string
   onTabChange: (key: string) => void
+  isAddAgentOpen: boolean
+  onOpenAddAgent: () => void
+  onCloseAddAgent: () => void
   onClose: () => void
 }) {
   const { data: balanceData, isLoading: balanceLoading } = useWorkspaceBalance(workspaceId)
@@ -296,7 +308,7 @@ function WorkspaceDrawer({
       case 'activity':
         return <TabPlaceholder icon={<Activity size={28} className="text-gray-400" />} label="Activity" />
       case 'agents':
-        return <TabPlaceholder icon={<Bot size={28} className="text-gray-400" />} label="Agents" />
+        return <AgentsTab workspaceId={workspaceId} onAddAgent={onOpenAddAgent} />
       case 'balances':
         return <TabPlaceholder icon={<Wallet size={28} className="text-gray-400" />} label="Balances" />
       default:
@@ -339,6 +351,18 @@ function WorkspaceDrawer({
         </div>
       )}
 
+      {/* Connect Agent action */}
+      <div className="mb-4 flex">
+        <motion.button
+          className="flex cursor-pointer items-center gap-1.5 rounded-full bg-black px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+          whileTap={{ scale: 0.98 }}
+          onClick={onOpenAddAgent}
+        >
+          <Bot size={14} />
+          Connect Agent
+        </motion.button>
+      </div>
+
       {/* Tabs */}
       <DrawerTabs
         items={DRAWER_TABS}
@@ -347,6 +371,12 @@ function WorkspaceDrawer({
       >
         {renderTabContent()}
       </DrawerTabs>
+
+      <AddAgentModal
+        isOpen={isAddAgentOpen}
+        onClose={onCloseAddAgent}
+        workspaceId={workspaceId}
+      />
     </motion.div>
   )
 }

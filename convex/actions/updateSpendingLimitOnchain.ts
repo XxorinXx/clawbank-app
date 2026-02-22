@@ -11,14 +11,24 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
-import { buildRemoveMemberTxCore } from "../lib/txBuilders";
+import { buildSpendingLimitUpdateTxCore } from "../lib/txBuilders";
 
-export const buildRemoveMemberTx = action({
+export const buildSpendingLimitUpdateTx = action({
   args: {
+    agentId: v.id("agents"),
     workspaceId: v.id("workspaces"),
-    memberPublicKey: v.string(),
+    tokenMint: v.string(),
+    limitAmount: v.number(),
+    periodType: v.union(
+      v.literal("daily"),
+      v.literal("weekly"),
+      v.literal("monthly"),
+    ),
   },
-  handler: async (ctx, args): Promise<{ serializedTx: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ serializedTx: string; createKey: string }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 
@@ -29,53 +39,63 @@ export const buildRemoveMemberTx = action({
     );
     if (!user) throw new Error("User not found");
 
-    // Cannot remove yourself
-    if (user.walletAddress === args.memberPublicKey) {
-      throw new Error("Cannot remove yourself from the workspace");
-    }
-
     const workspace = await ctx.runQuery(
       internal.internals.workspaceHelpers.getWorkspaceById,
       { workspaceId: args.workspaceId },
     );
     if (!workspace) throw new Error("Workspace not found");
 
+    const agent = await ctx.runQuery(
+      internal.internals.agentHelpers.getAgentById,
+      { agentId: args.agentId },
+    );
+    if (!agent || !agent.publicKey) {
+      throw new Error("Agent not found or not provisioned");
+    }
+
+    // Get existing spending limit to find old on-chain key
+    const limits = await ctx.runQuery(
+      internal.internals.agentHelpers.getSpendingLimitsByAgent,
+      { agentId: args.agentId },
+    );
+    const existingLimit = limits[0];
+    const oldOnchainCreateKey = existingLimit?.onchainCreateKey;
+
+    const tokenMeta = await ctx.runQuery(
+      internal.internals.agentHelpers.getTokenMetadata,
+      { mint: args.tokenMint },
+    );
+    const decimals = tokenMeta?.decimals ?? 9;
+
     const connection = new Connection(getRpcUrl(), "confirmed");
     const multisigPda = new PublicKey(workspace.multisigAddress);
-    const memberToRemove = new PublicKey(args.memberPublicKey);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
+    const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);
 
-    // Read multisig to get current state
     const multisigAccount =
       await multisig.accounts.Multisig.fromAccountAddress(
         connection,
         multisigPda,
       );
 
-    // Verify member exists on-chain
-    const memberExists = multisigAccount.members.some(
-      (m: multisig.types.Member) =>
-        m.key.toBase58() === args.memberPublicKey,
-    );
-    if (!memberExists) {
-      throw new Error("Member not found in on-chain multisig");
-    }
-
-    // Cannot remove last member
-    if (multisigAccount.members.length <= 1) {
-      throw new Error("Cannot remove the last member of the workspace");
-    }
-
     const currentTransactionIndex = Number(multisigAccount.transactionIndex);
+
+    const createKey = Keypair.generate();
     const { blockhash } = await connection.getLatestBlockhash();
 
-    const { tx } = buildRemoveMemberTxCore({
+    const { tx } = buildSpendingLimitUpdateTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
       multisigPda,
-      memberToRemove,
+      agentPubkey,
       currentTransactionIndex,
+      oldOnchainCreateKey: oldOnchainCreateKey ?? null,
+      createKeyPublicKey: createKey.publicKey,
+      tokenMint: new PublicKey(args.tokenMint),
+      limitAmount: args.limitAmount,
+      decimals,
+      periodType: args.periodType,
       blockhash,
     });
 
@@ -84,20 +104,28 @@ export const buildRemoveMemberTx = action({
 
     const serializedTx = Buffer.from(tx.serialize()).toString("base64");
 
-    return { serializedTx };
+    return {
+      serializedTx,
+      createKey: createKey.publicKey.toBase58(),
+    };
   },
 });
 
-export const submitRemoveMemberTx = action({
+export const submitSpendingLimitUpdateTx = action({
   args: {
+    agentId: v.id("agents"),
     workspaceId: v.id("workspaces"),
-    memberPublicKey: v.string(),
     signedTx: v.string(),
+    createKey: v.string(),
+    tokenMint: v.string(),
+    limitAmount: v.number(),
+    periodType: v.union(
+      v.literal("daily"),
+      v.literal("weekly"),
+      v.literal("monthly"),
+    ),
   },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ txSignature: string }> => {
+  handler: async (ctx, args): Promise<{ txSignature: string }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 
@@ -117,7 +145,7 @@ export const submitRemoveMemberTx = action({
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to submit member removal tx: ${message}`);
+      throw new Error(`Failed to update spending limit on-chain: ${message}`);
     }
 
     try {
@@ -129,38 +157,31 @@ export const submitRemoveMemberTx = action({
       const message =
         err instanceof Error ? err.message : "Unknown confirmation error";
       throw new Error(
-        `Member removal transaction failed to confirm: ${message}`,
+        `Spending limit transaction failed to confirm: ${message}`,
       );
     }
 
-    // On-chain confirmed — now reconcile DB
-    const workspace = await ctx.runQuery(
-      internal.internals.workspaceHelpers.getWorkspaceById,
-      { workspaceId: args.workspaceId },
-    );
-    if (!workspace) throw new Error("Workspace not found");
-
-    const multisigPda = new PublicKey(workspace.multisigAddress);
-
-    // Read the updated on-chain multisig state
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
-        connection,
-        multisigPda,
-      );
-
+    // On-chain confirmed — now update DB
+    // Update spending limit record
     await ctx.runMutation(
-      internal.internals.workspaceHelpers.reconcileMembersFromOnchain,
+      internal.internals.agentHelpers.updateSpendingLimitRecord,
       {
+        agentId: args.agentId,
         workspaceId: args.workspaceId,
-        onchainMembers: multisigAccount.members.map(
-          (m: multisig.types.Member) => ({
-            walletAddress: m.key.toBase58(),
-            role: "member" as const,
-          }),
-        ),
+        tokenMint: args.tokenMint,
+        limitAmount: args.limitAmount,
+        periodType: args.periodType,
+        onchainCreateKey: args.createKey,
       },
     );
+
+    // Log activity
+    await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
+      workspaceId: args.workspaceId,
+      agentId: args.agentId,
+      action: "limit_updated_onchain",
+      txSignature: signature,
+    });
 
     return { txSignature: signature };
   },

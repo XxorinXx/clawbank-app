@@ -40,3 +40,31 @@ Member removal uses the **Squads proposal flow** (configTransactionCreate), not 
 - Cannot remove yourself (the currently authenticated user).
 - Cannot remove the last member of a multisig.
 - All errors must be surfaced to the user — no silent failures.
+
+---
+
+## Sponsor is fee-payer only — never a multisig member
+
+**Date**: 2026-02-22
+**Story**: 0021
+**Authors**: Backend
+
+### Decision
+
+The sponsor wallet (`SPONSOR_PRIVATE_KEY`) is used exclusively as a Solana transaction fee payer. It is NOT added as a Squads multisig member.
+
+### Rationale
+
+- Only humans (Privy wallets) and agents (Turnkey wallets) should be multisig members.
+- The sponsor having member permissions would be a security concern — a compromised sponsor key could approve/execute proposals.
+- All multisig operations (create, propose, approve, execute) require the user's Privy wallet signature from the frontend.
+- The sponsor only provides `payerKey` and `rentPayer` fields in Squads instructions.
+
+### Implementation
+
+All Convex actions that build multisig transactions use the **build-then-user-signs** pattern:
+
+1. Backend builds the transaction with sponsor as fee payer, user wallet as creator/member.
+2. Backend partial-signs with sponsor keypair.
+3. Frontend receives the serialized transaction, user signs with Privy wallet.
+4. Frontend submits the fully-signed transaction to the backend for broadcast.

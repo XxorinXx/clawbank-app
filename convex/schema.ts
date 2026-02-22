@@ -55,4 +55,64 @@ export default defineSchema({
     priceUsd: v.number(),
     updatedAt: v.number(),
   }).index("by_mint", ["mint"]),
+
+  agents: defineTable({
+    workspaceId: v.id("workspaces"),
+    name: v.string(),
+    turnkeyWalletId: v.optional(v.string()),
+    publicKey: v.optional(v.string()),
+    status: v.union(
+      v.literal("provisioning"),
+      v.literal("connected"),
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("revoked"),
+    ),
+    connectCode: v.optional(v.string()),
+    connectCodeExpiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_publicKey", ["publicKey"]),
+
+  agent_sessions: defineTable({
+    agentId: v.id("agents"),
+    tokenHash: v.string(),
+    expiresAt: v.number(),
+    lastUsedAt: v.number(),
+    sessionType: v.union(v.literal("connect_code"), v.literal("session")),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_agentId", ["agentId"]),
+
+  spending_limits: defineTable({
+    workspaceId: v.id("workspaces"),
+    agentId: v.id("agents"),
+    tokenMint: v.string(),
+    limitAmount: v.number(),
+    spentAmount: v.number(),
+    periodType: v.union(
+      v.literal("daily"),
+      v.literal("weekly"),
+      v.literal("monthly"),
+    ),
+    periodStart: v.number(),
+    onchainCreateKey: v.optional(v.string()),
+  })
+    .index("by_agent_token", ["agentId", "tokenMint"])
+    .index("by_workspace", ["workspaceId"]),
+
+  activity_log: defineTable({
+    workspaceId: v.id("workspaces"),
+    agentId: v.id("agents"),
+    action: v.string(),
+    txSignature: v.optional(v.string()),
+    amount: v.optional(v.number()),
+    tokenMint: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    timestamp: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_agent", ["agentId"])
+    .index("by_txSignature", ["txSignature"]),
 });

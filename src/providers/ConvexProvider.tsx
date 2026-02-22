@@ -1,22 +1,29 @@
 import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react'
 import { usePrivy } from '@privy-io/react-auth'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { env } from '~/env'
 
-const convex = new ConvexReactClient(env.VITE_CONVEX_URL)
+const convex = new ConvexReactClient(env.VITE_CONVEX_URL, {
+  unsavedChangesWarning: false,
+})
 
 function useConvexAuth() {
   const { ready, authenticated, getAccessToken } = usePrivy()
 
+  // Stable ref for getAccessToken so fetchAccessToken doesn't recreate
+  // on every Privy render, which would cause ConvexProviderWithAuth to
+  // re-authenticate and briefly drop subscriptions.
+  const getAccessTokenRef = useRef(getAccessToken)
+  getAccessTokenRef.current = getAccessToken
+
   const fetchAccessToken = useCallback(
     async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
       if (!authenticated) return null
-      const token = await getAccessToken()
-      // forceRefreshToken is handled by Privy internally
+      const token = await getAccessTokenRef.current()
       void forceRefreshToken
       return token
     },
-    [authenticated, getAccessToken],
+    [authenticated],
   )
 
   return useMemo(
