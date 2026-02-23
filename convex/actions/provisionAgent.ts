@@ -9,19 +9,8 @@ import {
   getTurnkeyApiPrivateKey,
   getTurnkeyOrgId,
 } from "../env";
-import crypto from "crypto";
-
-const CONNECT_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const CODE_LENGTH = 6;
-
-function generateConnectCode(): string {
-  let code = "";
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    code += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
-  }
-  return code;
-}
+import { makeConnectCode, sha256Hex, CONNECT_CODE_TTL_MS } from "../lib/connectCode";
+import { extractErrorMessage } from "../lib/turnkeyHelpers";
 
 export const provisionAgent = internalAction({
   args: {
@@ -69,26 +58,20 @@ export const provisionAgent = internalAction({
       walletId = wallet.walletId;
       publicKey = wallet.addresses[0];
     } catch (err: unknown) {
+      const errorMsg = extractErrorMessage(err, "Unknown Turnkey error");
       // Log failure to activity_log
       await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
         workspaceId: agent.workspaceId,
         agentId: args.agentId,
         action: "provision_failed",
-        metadata: {
-          error: err instanceof Error ? err.message : "Unknown Turnkey error",
-        },
+        metadata: { error: errorMsg },
       });
-      throw new Error(
-        `Turnkey wallet creation failed: ${err instanceof Error ? err.message : "Unknown error"}`,
-      );
+      throw new Error(`Turnkey wallet creation failed: ${errorMsg}`);
     }
 
     // 4. Generate connect code and hash it
-    const connectCode = generateConnectCode();
-    const hashedCode = crypto
-      .createHash("sha256")
-      .update(connectCode)
-      .digest("hex");
+    const connectCode = makeConnectCode();
+    const hashedCode = sha256Hex(connectCode);
 
     const now = Date.now();
     const expiresAt = now + CONNECT_CODE_TTL_MS;

@@ -3,19 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import crypto from "crypto";
-
-const CONNECT_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const CODE_LENGTH = 6;
-
-function makeConnectCode(): string {
-  let code = "";
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    code += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
-  }
-  return code;
-}
+import { makeConnectCode, sha256Hex, CONNECT_CODE_TTL_MS } from "../lib/connectCode";
 
 export const generateConnectCode = action({
   args: { agentId: v.id("agents") },
@@ -36,10 +24,7 @@ export const generateConnectCode = action({
 
     // 3. Generate code and hash it
     const connectCode = makeConnectCode();
-    const hashedCode = crypto
-      .createHash("sha256")
-      .update(connectCode)
-      .digest("hex");
+    const hashedCode = sha256Hex(connectCode);
 
     const now = Date.now();
     const expiresAt = now + CONNECT_CODE_TTL_MS;

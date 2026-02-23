@@ -1,6 +1,7 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "../_generated/dataModel";
+import { requireWorkspaceMember } from "../internals/workspaceHelpers";
 
 type SpendingLimitInfo = {
   tokenMint: string;
@@ -29,8 +30,7 @@ export const list = query({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<AgentWithLimits[]> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
+    await requireWorkspaceMember(ctx, args.workspaceId);
 
     const agents = await ctx.db
       .query("agents")
@@ -42,12 +42,12 @@ export const list = query({
     const results: AgentWithLimits[] = [];
 
     for (const agent of agents) {
+      // Use by_agent_token index for direct lookup instead of filtering by workspace
       const limits = await ctx.db
         .query("spending_limits")
-        .withIndex("by_workspace", (q) =>
-          q.eq("workspaceId", args.workspaceId),
+        .withIndex("by_agent_token", (q) =>
+          q.eq("agentId", agent._id),
         )
-        .filter((q) => q.eq(q.field("agentId"), agent._id))
         .collect();
 
       const limitsWithSymbols: SpendingLimitInfo[] = [];
@@ -87,11 +87,14 @@ export const list = query({
 export const getConnectCode = query({
   args: { agentId: v.id("agents") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
     const agent = await ctx.db.get(args.agentId);
     if (!agent) return null;
+
+    try {
+      await requireWorkspaceMember(ctx, agent.workspaceId);
+    } catch {
+      return null;
+    }
 
     // Return connect code only if it's still valid
     if (!agent.connectCode || !agent.connectCodeExpiresAt) return null;

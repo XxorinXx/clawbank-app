@@ -1,40 +1,22 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Loader2, Copy, Check, CheckCircle, ChevronDown } from "lucide-react";
+import { Loader2, Copy, Check, CheckCircle } from "lucide-react";
 import { useMutation, useQuery, useAction } from "convex/react";
 import { useSolanaWallets } from "@privy-io/react-auth";
 import { VersionedTransaction } from "@solana/web3.js";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Modal } from "~/components/Modal";
-import { TokenIcon } from "~/components/TokenIcon";
 import { useWorkspaceBalance } from "~/hooks/useWorkspaceBalance";
+import { TokenDropdown } from "~/components/ui/TokenDropdown";
+import { PeriodSelector, periodLabel, type PeriodType } from "~/components/ui/PeriodSelector";
+import { slideVariants } from "~/utils/animations";
+import { truncateAddress } from "~/utils/format";
 
 interface AddAgentModalProps {
   isOpen: boolean;
   onClose: () => void;
   workspaceId: Id<"workspaces">;
-}
-
-type PeriodType = "daily" | "weekly" | "monthly";
-
-const PERIODS: { value: PeriodType; label: string }[] = [
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-];
-
-const slideVariants = {
-  enterFromRight: { x: 80, opacity: 0 },
-  enterFromLeft: { x: -80, opacity: 0 },
-  center: { x: 0, opacity: 1 },
-  exitToLeft: { x: -80, opacity: 0 },
-  exitToRight: { x: 80, opacity: 0 },
-};
-
-function truncateAddress(address: string): string {
-  if (address.length <= 8) return address;
-  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
 function formatCountdown(ms: number): string {
@@ -43,17 +25,6 @@ function formatCountdown(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function periodLabel(period: PeriodType): string {
-  switch (period) {
-    case "daily":
-      return "day";
-    case "weekly":
-      return "week";
-    case "monthly":
-      return "month";
-  }
 }
 
 export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalProps) {
@@ -82,8 +53,6 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
   const [period, setPeriod] = useState<PeriodType>("daily");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
-  const [isTokenDropdownOpen, setIsTokenDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Step 2 fields
   const [agentId, setAgentId] = useState<Id<"agents"> | null>(null);
@@ -128,19 +97,6 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
       setTokenSymbol(balanceData.tokens[0].symbol);
     }
   }, [balanceData, tokenMint]);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsTokenDropdownOpen(false);
-      }
-    }
-    if (isTokenDropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isTokenDropdownOpen]);
 
   // Countdown timer for connect code
   useEffect(() => {
@@ -238,7 +194,6 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     setCountdown(0);
     setCodeExpired(false);
     setIsGeneratingCode(false);
-    setIsTokenDropdownOpen(false);
     setIsActivating(false);
     setActivationError("");
     setAgentConnected(false);
@@ -316,8 +271,6 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
     resetState();
   }, [onClose, resetState]);
 
-  const selectedToken = balanceData?.tokens.find((t) => t.mint === tokenMint);
-
   return (
     <Modal isOpen={isOpen} onClose={handleClose} preventClose={isSubmitting}>
       <AnimatePresence mode="wait" initial={false}>
@@ -356,55 +309,16 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
 
             {/* Token + Amount row */}
             <div className="mt-4 flex gap-3">
-              {/* Token selector */}
-              <div className="relative w-36" ref={dropdownRef}>
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  Token
-                </label>
-                <button
-                  type="button"
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-gray-200 px-3 py-3 text-sm outline-none transition-colors hover:border-gray-300 focus:border-gray-400"
-                  onClick={() => setIsTokenDropdownOpen(!isTokenDropdownOpen)}
-                  disabled={isSubmitting}
-                >
-                  {selectedToken ? (
-                    <>
-                      <TokenIcon icon={selectedToken.icon} className="h-5 w-5" />
-                      <span className="flex-1 text-left font-medium">{selectedToken.symbol}</span>
-                    </>
-                  ) : (
-                    <span className="flex-1 text-left text-gray-500">{tokenSymbol || "SOL"}</span>
-                  )}
-                  <ChevronDown size={14} className="text-gray-400" />
-                </button>
-
-                {/* Dropdown */}
-                {isTokenDropdownOpen && (
-                  <div className="absolute left-0 top-full z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
-                    {balanceData && balanceData.tokens.length > 0 ? (
-                      balanceData.tokens.map((token) => (
-                        <button
-                          key={token.mint}
-                          type="button"
-                          className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-gray-50"
-                          onClick={() => {
-                            setTokenMint(token.mint);
-                            setTokenSymbol(token.symbol);
-                            setIsTokenDropdownOpen(false);
-                          }}
-                        >
-                          <TokenIcon icon={token.icon} className="h-5 w-5" />
-                          <span className="font-medium">{token.symbol}</span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-gray-400">
-                        No tokens found
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <TokenDropdown
+                tokens={balanceData?.tokens ?? []}
+                selectedMint={tokenMint}
+                selectedSymbol={tokenSymbol}
+                onSelect={(mint, symbol) => {
+                  setTokenMint(mint);
+                  setTokenSymbol(symbol);
+                }}
+                disabled={isSubmitting}
+              />
 
               {/* Amount */}
               <div className="flex-1">
@@ -429,26 +343,7 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
             </div>
 
             {/* Period selector */}
-            <label className="mb-2 mt-4 block text-sm font-medium text-gray-700">
-              Period
-            </label>
-            <div className="flex gap-0 rounded-xl border border-gray-200 p-1">
-              {PERIODS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  className={`flex-1 cursor-pointer rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    period === p.value
-                      ? "bg-black text-white"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                  onClick={() => setPeriod(p.value)}
-                  disabled={isSubmitting}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            <PeriodSelector value={period} onChange={setPeriod} disabled={isSubmitting} />
 
             {/* Summary */}
             {name.trim() && parseFloat(amount) > 0 && (

@@ -12,6 +12,7 @@ import {
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
 import { buildRemoveMemberTxCore } from "../lib/txBuilders";
+import { extractErrorMessage } from "../lib/turnkeyHelpers";
 
 export const buildRemoveMemberTx = action({
   args: {
@@ -115,9 +116,7 @@ export const submitRemoveMemberTx = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to submit member removal tx: ${message}`);
+      throw new Error(`Failed to submit member removal tx: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     try {
@@ -126,10 +125,8 @@ export const submitRemoveMemberTx = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown confirmation error";
       throw new Error(
-        `Member removal transaction failed to confirm: ${message}`,
+        `Member removal transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`,
       );
     }
 

@@ -5,11 +5,8 @@ import { toast } from 'sonner'
 import { useWorkspaceMembers } from '~/hooks/useWorkspaceMembers'
 import { Id } from '../../convex/_generated/dataModel'
 import { DeleteMemberModal } from './DeleteMemberModal'
-
-function truncateAddress(address: string): string {
-  if (address.length <= 12) return address
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
-}
+import { ListSkeleton } from './ui/ListSkeleton'
+import { truncateAddress } from '~/utils/format'
 
 function PermissionBadge({ label }: { label: string }) {
   return (
@@ -29,19 +26,7 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
   const [deletingMember, setDeletingMember] = useState<string | null>(null)
 
   if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[1, 2].map((i) => (
-          <div key={i} className="flex animate-pulse items-center gap-3 rounded-xl p-3">
-            <div className="h-10 w-10 rounded-full bg-gray-200" />
-            <div className="flex-1 space-y-2">
-              <div className="h-4 w-28 rounded bg-gray-200" />
-              <div className="h-3 w-20 rounded bg-gray-200" />
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+    return <ListSkeleton />
   }
 
   const isSoleMember = members.length <= 1
@@ -87,7 +72,7 @@ export function MembersTab({ workspaceId }: MembersTabProps) {
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-semibold text-gray-900">
-                {truncateAddress(member.walletAddress)}
+                {truncateAddress(member.walletAddress, 6)}
               </span>
               {member.role === 'creator' && (
                 <span className="rounded bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">

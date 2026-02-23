@@ -1,6 +1,7 @@
 import { Modal } from './Modal'
 import { motion } from 'motion/react'
 import { TokenIcon } from './TokenIcon'
+import { formatUsd } from '~/utils/format'
 
 interface TokenInfo {
   mint: string
@@ -14,19 +15,6 @@ interface TokenListModalProps {
   isOpen: boolean
   onClose: () => void
   tokens: TokenInfo[]
-}
-
-function formatUsd(value: number): string {
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toLocaleString('en-US', { maximumFractionDigits: 2 })}M`
-  }
-  if (value >= 0.01) {
-    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
-  if (value > 0) {
-    return '<$0.01'
-  }
-  return '$0.00'
 }
 
 export function TokenListModal({ isOpen, onClose, tokens }: TokenListModalProps) {

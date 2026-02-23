@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Loader2, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useAction } from "convex/react";
-import { useSolanaWallets } from "@privy-io/react-auth";
-import { VersionedTransaction } from "@solana/web3.js";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 import { Modal } from "~/components/Modal";
+import { ModalActions } from "~/components/ui/ModalActions";
+import { useSignTransaction } from "~/hooks/useSignTransaction";
+import { slideVariants } from "~/utils/animations";
 
 interface Member {
   value: string;
@@ -39,18 +40,11 @@ function truncateValue(value: string): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
-const slideVariants = {
-  enterFromRight: { x: 80, opacity: 0 },
-  enterFromLeft: { x: -80, opacity: 0 },
-  center: { x: 0, opacity: 1 },
-  exitToLeft: { x: -80, opacity: 0 },
-  exitToRight: { x: 80, opacity: 0 },
-};
-
 export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalProps) {
   const buildCreateWorkspaceTx = useAction(api.actions.createWorkspace.buildCreateWorkspaceTx);
   const submitCreateWorkspaceTx = useAction(api.actions.createWorkspace.submitCreateWorkspaceTx);
-  const { wallets: solanaWallets } = useSolanaWallets();
+  const tx = useSignTransaction();
+
   const [step, setStep] = useState<1 | 2>(1);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [name, setName] = useState("");
@@ -58,8 +52,6 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
   const [memberInput, setMemberInput] = useState("");
   const [memberError, setMemberError] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState("");
 
   const resetState = useCallback(() => {
     setStep(1);
@@ -69,15 +61,14 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
     setMemberInput("");
     setMemberError("");
     setMembers([]);
-    setIsSubmitting(false);
-    setSubmitStatus("");
-  }, []);
+    tx.reset();
+  }, [tx]);
 
   const handleClose = useCallback(() => {
-    if (isSubmitting) return;
+    if (tx.isProcessing) return;
     onClose();
     resetState();
-  }, [onClose, resetState, isSubmitting]);
+  }, [onClose, resetState, tx.isProcessing]);
 
   const handleNext = useCallback(() => {
     if (!name.trim()) {
@@ -120,46 +111,27 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    setIsSubmitting(true);
-    setSubmitStatus("Building transaction...");
-    try {
-      const memberArgs = members.map((m) => ({ type: m.type, value: m.value }));
+    const memberArgs = members.map((m) => ({ type: m.type, value: m.value }));
+    const trimmedName = name.trim();
 
-      // Step 1: Build the transaction (server-side)
-      const { serializedTx, createKey } = await buildCreateWorkspaceTx({
-        name: name.trim(),
-        members: memberArgs,
-      });
+    const success = await tx.execute({
+      build: () =>
+        buildCreateWorkspaceTx({ name: trimmedName, members: memberArgs }),
+      submit: ({ signedTx, createKey }) =>
+        submitCreateWorkspaceTx({
+          name: trimmedName,
+          members: memberArgs,
+          signedTx,
+          createKey: createKey!,
+        }),
+    });
 
-      // Step 2: Sign with user's Privy wallet
-      setSubmitStatus("Signing transaction...");
-      const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0));
-      const tx = VersionedTransaction.deserialize(txBytes);
-
-      const wallet = solanaWallets[0];
-      if (!wallet) throw new Error("No Solana wallet found");
-      const signedTx = await wallet.signTransaction(tx);
-      const signedBase64 = btoa(String.fromCharCode(...signedTx.serialize()));
-
-      // Step 3: Submit (server sends on-chain, then stores in DB)
-      setSubmitStatus("Submitting on-chain...");
-      await submitCreateWorkspaceTx({
-        name: name.trim(),
-        members: memberArgs,
-        signedTx: signedBase64,
-        createKey,
-      });
-
+    if (success) {
       toast.success("Workspace created");
       onClose();
       resetState();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to create workspace";
-      toast.error(message);
-      setIsSubmitting(false);
-      setSubmitStatus("");
     }
-  }, [name, members, buildCreateWorkspaceTx, submitCreateWorkspaceTx, solanaWallets, onClose, resetState]);
+  }, [name, members, buildCreateWorkspaceTx, submitCreateWorkspaceTx, tx, onClose, resetState]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -178,7 +150,7 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} preventClose={isSubmitting}>
+    <Modal isOpen={isOpen} onClose={handleClose} preventClose={tx.isProcessing}>
       <AnimatePresence mode="wait" initial={false}>
         {step === 1 && (
           <motion.div
@@ -205,24 +177,11 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
             />
             {nameError && <p className="mt-1.5 text-sm text-red-500">{nameError}</p>}
 
-            <div className="mt-8 flex items-center justify-between">
-              <motion.button
-                className="cursor-pointer rounded-full px-4 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleClose}
-              >
-                Cancel
-              </motion.button>
-              <motion.button
-                className="cursor-pointer rounded-full bg-black px-6 py-2.5 font-medium text-white transition-colors hover:bg-gray-800"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleNext}
-              >
-                Next
-              </motion.button>
-            </div>
+            <ModalActions
+              onCancel={handleClose}
+              onConfirm={handleNext}
+              confirmLabel="Next"
+            />
           </motion.div>
         )}
 
@@ -248,14 +207,14 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
                 placeholder="Email or Solana wallet address"
                 className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-gray-400"
                 autoFocus
-                disabled={isSubmitting}
+                disabled={tx.isProcessing}
               />
               <motion.button
                 className="flex cursor-pointer items-center gap-1 rounded-full bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={handleAddMember}
-                disabled={isSubmitting}
+                disabled={tx.isProcessing}
               >
                 <Plus size={16} />
                 Add
@@ -263,7 +222,6 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
             </div>
             {memberError && <p className="mt-1.5 text-sm text-red-500">{memberError}</p>}
 
-            {/* Member list */}
             {members.length > 0 && (
               <div className="mt-4 flex max-h-40 flex-col gap-2 overflow-y-auto">
                 {members.map((member, index) => (
@@ -286,7 +244,7 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
                     <button
                       className="cursor-pointer rounded-full p-1 text-gray-400 transition-colors hover:text-gray-600"
                       onClick={() => handleRemoveMember(index)}
-                      disabled={isSubmitting}
+                      disabled={tx.isProcessing}
                     >
                       <X size={14} />
                     </button>
@@ -295,27 +253,16 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
               </div>
             )}
 
-            <div className="mt-8 flex items-center justify-between">
-              <motion.button
-                className="cursor-pointer rounded-full px-4 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleBack}
-                disabled={isSubmitting}
-              >
-                Back
-              </motion.button>
-              <motion.button
-                className="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-2.5 font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
-                whileHover={isSubmitting ? {} : { scale: 1.02 }}
-                whileTap={isSubmitting ? {} : { scale: 0.95 }}
-                onClick={() => void handleSubmit()}
-                disabled={isSubmitting}
-              >
-                {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                {isSubmitting ? submitStatus || "Creating..." : "Create workspace"}
-              </motion.button>
-            </div>
+            {tx.error && <p className="mt-3 text-sm text-red-500">{tx.error}</p>}
+
+            <ModalActions
+              onCancel={handleBack}
+              onConfirm={() => void handleSubmit()}
+              cancelLabel="Back"
+              confirmLabel="Create workspace"
+              loadingLabel={tx.statusLabel || "Creating..."}
+              isLoading={tx.isProcessing}
+            />
           </motion.div>
         )}
       </AnimatePresence>

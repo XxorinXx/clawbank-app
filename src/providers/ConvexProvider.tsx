@@ -17,11 +17,9 @@ function useConvexAuth() {
   getAccessTokenRef.current = getAccessToken
 
   const fetchAccessToken = useCallback(
-    async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
+    async (_args: { forceRefreshToken: boolean }) => {
       if (!authenticated) return null
-      const token = await getAccessTokenRef.current()
-      void forceRefreshToken
-      return token
+      return await getAccessTokenRef.current()
     },
     [authenticated],
   )

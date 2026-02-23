@@ -39,14 +39,6 @@ export function getTurnkeyOrgId(): string {
 }
 
 /**
- * Returns the HMAC secret used for hashing session tokens and connect codes.
- * NEVER log, return to client, or include in error messages.
- */
-export function getSessionSecret(): string {
-  return requireEnv("SESSION_SECRET");
-}
-
-/**
  * Returns the sponsor private key bytes decoded from bs58.
  * NEVER log, return to client, or include in error messages.
  */

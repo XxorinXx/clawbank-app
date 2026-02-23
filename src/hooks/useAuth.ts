@@ -1,14 +1,36 @@
 import { usePrivy, useSolanaWallets } from '@privy-io/react-auth'
 
-interface AuthState {
-  isAuthenticated: boolean
-  userEmail: string | null
-  walletAddress: string | null
-  isLoading: boolean
+interface AuthLoading {
+  isAuthenticated: false
+  isLoading: true
+  userEmail: null
+  walletAddress: null
   login: () => void
   logout: () => Promise<void>
   exportWallet: () => Promise<void>
 }
+
+interface AuthUnauthenticated {
+  isAuthenticated: false
+  isLoading: false
+  userEmail: null
+  walletAddress: null
+  login: () => void
+  logout: () => Promise<void>
+  exportWallet: () => Promise<void>
+}
+
+interface AuthAuthenticated {
+  isAuthenticated: true
+  isLoading: false
+  userEmail: string | null
+  walletAddress: string | null
+  login: () => void
+  logout: () => Promise<void>
+  exportWallet: () => Promise<void>
+}
+
+export type AuthState = AuthLoading | AuthUnauthenticated | AuthAuthenticated
 
 export function useAuth(): AuthState {
   const { ready, authenticated, user, login, logout } = usePrivy()
@@ -16,22 +38,37 @@ export function useAuth(): AuthState {
 
   const isLoading = !ready || !walletsReady
 
-  const userEmail = user?.email?.address ?? user?.google?.email ?? null
+  const shared = {
+    login,
+    logout: async () => { await logout() },
+    exportWallet: async () => { await exportWallet() },
+  }
 
-  // Use the first connected Solana wallet from Privy's Solana wallets hook
-  const walletAddress = wallets[0]?.address ?? null
+  if (isLoading) {
+    return {
+      isAuthenticated: false,
+      isLoading: true,
+      userEmail: null,
+      walletAddress: null,
+      ...shared,
+    }
+  }
+
+  if (!authenticated) {
+    return {
+      isAuthenticated: false,
+      isLoading: false,
+      userEmail: null,
+      walletAddress: null,
+      ...shared,
+    }
+  }
 
   return {
-    isAuthenticated: ready && authenticated,
-    userEmail,
-    walletAddress,
-    isLoading,
-    login,
-    logout: async () => {
-      await logout()
-    },
-    exportWallet: async () => {
-      await exportWallet()
-    },
+    isAuthenticated: true,
+    isLoading: false,
+    userEmail: user?.email?.address ?? user?.google?.email ?? null,
+    walletAddress: wallets[0]?.address ?? null,
+    ...shared,
   }
 }

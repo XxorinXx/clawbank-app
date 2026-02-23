@@ -12,6 +12,7 @@ import {
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
 import { buildAgentRevocationTxCore } from "../lib/txBuilders";
+import { extractErrorMessage } from "../lib/turnkeyHelpers";
 
 export const buildAgentRevocationTx = action({
   args: {
@@ -155,9 +156,7 @@ export const submitAgentRevocationTx = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to submit revocation tx: ${message}`);
+      throw new Error(`Failed to submit revocation tx: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     await connection.confirmTransaction(
