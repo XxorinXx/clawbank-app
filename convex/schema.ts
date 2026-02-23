@@ -102,6 +102,36 @@ export default defineSchema({
     .index("by_agent_token", ["agentId", "tokenMint"])
     .index("by_workspace", ["workspaceId"]),
 
+  transfer_requests: defineTable({
+    agentId: v.id("agents"),
+    workspaceId: v.id("workspaces"),
+    recipient: v.string(),
+    amountLamports: v.number(),
+    shortNote: v.string(),
+    description: v.string(),
+    status: v.union(
+      v.literal("pending_execution"),
+      v.literal("executed"),
+      v.literal("pending_approval"),
+      v.literal("approved"),
+      v.literal("denied"),
+      v.literal("failed"),
+    ),
+    spendingLimitSnapshot: v.object({
+      limitAmount: v.number(),
+      spentAmount: v.number(),
+      periodType: v.string(),
+    }),
+    txSignature: v.optional(v.string()),
+    proposalAddress: v.optional(v.string()),
+    proposalIndex: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_agent", ["agentId"]),
+
   activity_log: defineTable({
     workspaceId: v.id("workspaces"),
     agentId: v.id("agents"),

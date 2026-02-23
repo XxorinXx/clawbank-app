@@ -122,6 +122,12 @@ export const submitAgentRevocationTx = action({
         { agentId: args.agentId },
       );
 
+      // Cancel all pending transfer requests by this agent
+      await ctx.runMutation(
+        internal.internals.transferHelpers.cancelPendingRequestsByAgent,
+        { agentId: args.agentId },
+      );
+
       const agent = await ctx.runQuery(
         internal.internals.agentHelpers.getAgentById,
         { agentId: args.agentId },
@@ -162,6 +168,12 @@ export const submitAgentRevocationTx = action({
     // DB revocation: set status, clear connect code, delete sessions
     await ctx.runMutation(
       internal.internals.agentHelpers.revokeAgentInternal,
+      { agentId: args.agentId },
+    );
+
+    // Cancel all pending transfer requests by this agent
+    await ctx.runMutation(
+      internal.internals.transferHelpers.cancelPendingRequestsByAgent,
       { agentId: args.agentId },
     );
 

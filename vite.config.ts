@@ -23,7 +23,15 @@ export default defineConfig({
       // moment (e.g. during the agent-activation wallet-signing flow), the
       // Convex client's built-in `beforeunload` guard fires and Chrome shows
       // the "Reload site? Changes you made may not be saved." dialog.
-      ignored: ['**/convex/_generated/**'],
+      //
+      // Use absolute path for reliable chokidar matching, plus the glob
+      // fallback.  Also ignore .clawbank credential file writes.
+      ignored: [
+        path.resolve(__dirname, 'convex/_generated') + '/**',
+        '**/convex/_generated/**',
+        '**/.clawbank',
+        '**/node_modules/**',
+      ],
     },
   },
 })
