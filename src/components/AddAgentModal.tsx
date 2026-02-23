@@ -7,6 +7,7 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Modal } from "~/components/Modal";
+import { ModalActions } from "~/components/ui/ModalActions";
 import { useWorkspaceBalance } from "~/hooks/useWorkspaceBalance";
 import { TokenDropdown } from "~/components/ui/TokenDropdown";
 import { PeriodSelector, periodLabel, type PeriodType } from "~/components/ui/PeriodSelector";
@@ -365,28 +366,14 @@ export function AddAgentModal({ isOpen, onClose, workspaceId }: AddAgentModalPro
               <p className="mt-3 text-sm text-red-500">{formError}</p>
             )}
 
-            {/* Actions */}
-            <div className="mt-8 flex items-center justify-between">
-              <motion.button
-                className="cursor-pointer rounded-full px-4 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleClose}
-                disabled={isSubmitting}
-              >
-                Cancel
-              </motion.button>
-              <motion.button
-                className="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-2.5 font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
-                whileHover={isSubmitting || !isNextEnabled ? {} : { scale: 1.02 }}
-                whileTap={isSubmitting || !isNextEnabled ? {} : { scale: 0.95 }}
-                onClick={() => void handleNext()}
-                disabled={isSubmitting || !isNextEnabled}
-              >
-                {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                {isSubmitting ? "Creating..." : "Next"}
-              </motion.button>
-            </div>
+            <ModalActions
+              onCancel={handleClose}
+              onConfirm={() => void handleNext()}
+              confirmLabel="Next"
+              loadingLabel="Creating..."
+              isLoading={isSubmitting}
+              isDisabled={!isNextEnabled}
+            />
           </motion.div>
         )}
 
