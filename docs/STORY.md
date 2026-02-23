@@ -1,138 +1,115 @@
-# STORY: 0021 Add Agent + Turnkey Wallet + Terminal Connect (MVP)
+# STORY: CB-AGENT-SPEND-001 Agent Spend + Human Approval Transfer Flow (SOL transfer demo)
 
-## Team Deployment
+## Inputs (the only files agents should read)
 
-Deploy Claude Code Agent Team (delegate mode ON):
-
-- Lead / Architect
-- PM/UX
-- Frontend
-- Backend
-- QA
-
-Lead may and is recommended to spawn extra specialist subagents if needed (Turnkey/Solana/Security).
-
-Use shared task list.
-Execute only this story until DONE.
-
-## Inputs (must read)
-
-- docs/ARCH_AGENT_CONNECT.md
-- docs/UX_AGENT_CONNECT.md
-- docs/SECURITY_AGENT_CONNECT.md
-- docs/AGENT_INSTALL.md (edit: terminal-only install)
-- existing workspace + squads code
+- OVERVIEW.md
+- STORY_TAMPLATE.md
+- docs/PRD.md
+- docs/ACCEPTANCE.md
+- docs/ARCH.md (if exists)
+- docs/PROGRESS.md
+- convex/ (all Convex schema + functions)
+- src/ (frontend app)
+- src/routes (TanStack Router / Start routes)
+- src/components (shadcn UI components)
+- src/lib/solana (or wherever Solana helpers live)
+- src/lib/squads (or wherever Squads helpers live)
 
 ## Scope (must)
 
-### Gate 0 — Terminal install only (doc change)
+### Goal
 
-Update docs/AGENT_INSTALL.md:
+Implement two end-to-end flows for a SOL transfer to:
+`4MnEbZD5fvvGMHgVN77vZCYixR7zrwQZiydXLDHnMnVB`
 
-- Remove npm package publishing assumptions (no @clawbank/cli package yet).
-- Replace with local repo runnable command, e.g.:
-  - `pnpm clawbank:connect` or `node scripts/agent/connect.mjs`
-- Keep: connect code → token saved to .env → agent can call backend.
-  (Installation is terminal-only for v1.)
+1. **Agent spend within limit (auto-execute):**
+   - Agent creates a transfer request with:
+     - short note (very short)
+     - description (longer)
+     - “what this pays for” + “why”
+   - System checks agent spending limit.
+   - If under limit: backend signs and submits tx (Turnkey signer) and stores status + tx signature.
+   - Request appears in UI (Requests tab) as “Executed” with details and tx link.
 
-QA must verify doc matches actual command.
+2. **Agent spend requiring human approval (proposal):**
+   - Same transfer request fields (short note + description + metadata).
+   - If over limit (or forced approval mode): create an on-chain **Squads proposal** for the transfer.
+   - Store proposal address/ID in Convex and show request in UI as “Pending Approval”.
+   - Human can **Approve** or **Deny** from the UI.
+   - Approve => approve/execute proposal on-chain; update request status to Approved/Executed.
+   - Deny => reject proposal on-chain (or mark as denied + close); update request status to Denied.
 
-### A) Backend — Turnkey provisioning + agent records
+### UX surface
 
-Implement server-side Turnkey integration (no private keys):
-
-- Convex env:
-  - TURNKEY_API_PUBLIC_KEY / TURNKEY_API_PRIVATE_KEY (or stamp method)
-  - TURNKEY_ORG_ID (if required)
-  - RPC_URL
-- Create agent record via human-auth mutation:
-  - `agents.create({ workspaceId, name, budget }) -> { agentId }`
-  - Sets agent.status="provisioning" and schedules provision action.
-- Provision action:
-  - creates Turnkey wallet for agent
-  - stores turnkeyWalletId + publicKey
-  - generates connect code (short TTL)
-  - returns connect code for UI display OR stores it retrievable once
-- Persist sessions as HASHED secrets only (connect codes + session tokens hashed).
-- Add agent-scoped auth for HTTP actions:
-  - `auth.exchangeConnectCode({ connectCode }) -> { sessionToken, agentId, workspaceId, expiresAt }`
-
-Security requirements:
-
-- never log Turnkey credentials
-- never store raw tokens in DB (hash only)
-- rate limit:
-  - connect-code generation per workspace
-  - exchange attempts per IP/agent
-- deterministic errors
-
-### B) Frontend — Add Agent modal (3 steps) + connect code display
-
-Implement UI per UX spec:
-
-- Entry points:
-  - Agents tab: "Add Agent" CTA
-  - Workspace header: "Connect Agent"
-- Modal:
-  Step 1: name + budget (token+amount+period)
-  Step 2: connect code display (with expiry countdown)
-  Step 3: success
-- Step 2 must show terminal command (copy button).
-- When backend reports “agent connected” (token exchanged), auto-advance to Done.
-
-(Use realtime subscription/query polling—backend chooses. Must be deterministic.)
-
-### C) Terminal connect command (repo-local CLI)
-
-Implement a minimal terminal command (no publishing):
-
-- Prompts for connect code OR accepts as argument.
-- Calls backend `auth.exchangeConnectCode`.
-- Writes `.env` in CWD:
-  - CLAWBANK_API_URL=<convex deployment URL>
-  - CLAWBANK_AGENT_TOKEN=<token>
-- Never prints token after writing.
-- Explicit ✓/✗ output.
-- Retry logic: 2 attempts then stop.
-
-### D) Agent status endpoint (minimal)
-
-Implement HTTP action:
-
-- `agent.status({ sessionToken }) -> { agentId, workspaceId, status, limits }`
-
-This is needed for CLI “Connected ✓” verification.
-
-### E) QA (must)
-
-- Run ./scripts/checks.sh
-- Verify:
-  - happy path: create agent → connect code → terminal connect writes .env → status returns active
-  - connect code single-use + expiry
-  - token is not logged / not stored raw
-  - revoke/disable basic path (can be stubbed but must exist as non-dangerous toggle)
-- Edge cases ≥ 6:
-  - expired code
-  - reused code
-  - Turnkey API failure
-  - workspace unauthorized create
-  - missing budget fields
-  - CLI run outside repo (no .env write perms)
+- Requests tab is the operating surface for these requests (list view).
+- Each request card shows:
+  - Status badge (Pending / Executed / Approved / Denied / Failed)
+  - Recipient (short)
+  - Amount (SOL)
+  - **Short note**
+  - Created date
+  - Expand/collapse to reveal:
+    - Full description
+    - Initiator (agent id)
+    - Spending limit snapshot used for decision
+    - Proposal address (if any)
+    - Tx signature (if any)
+    - Error message (if failed)
 
 ## Out of scope (must not)
 
-- Spend.request implementation (keep stubbed)
-- Squads member add/remove proposals unless already required for “active” (if required, do minimal viable)
-- npm package publishing
-- multi-runtime installers (only terminal)
+- Destination allowlists (explicitly deferred in overview)
+- Swaps, token transfers, SPL tokens (SOL only)
+- Deep on-chain indexing beyond what’s needed for this flow
+- Advanced policies beyond “spending limit gate + approval”
+- Multi-workflow batching or recurring payments
+
+## UX + Acceptance (objective)
+
+### Under-limit path
+
+- Given a workspace with an agent and a spending limit that covers the transfer amount
+- When the agent submits a SOL transfer request with short note + description
+- Then the tx is signed and sent automatically
+- And the request is visible in Requests as Executed with tx signature
+
+### Approval-required path
+
+- Given a workspace with an agent and a spending limit that does NOT cover the transfer amount (or approval mode enabled)
+- When the agent submits the same SOL transfer request
+- Then an on-chain Squads proposal is created
+- And the request is visible in Requests as Pending Approval
+- When a human clicks Approve
+- Then the proposal is approved/executed on-chain and request becomes Approved/Executed
+- When a human clicks Deny
+- Then the request becomes Denied and cannot be executed
+
+### Error cases
+
+- If Turnkey signing fails: request becomes Failed with error details
+- If RPC fails / blockhash expired: request becomes Failed and UI shows “retry” only if safe
+- If proposal creation fails: request becomes Failed
+- If human approval fails due to missing permissions: show error and keep request Pending
+- If request data is missing short note or description: validation error, no chain action
+
+## Skills enabled (required)
+
+- Solana vuln scan (trailofbits)
+- Solana dev
+- Convex
+- Vercel React best practices
+- TanStack Query
+- TanStack Start best practices
+- TanStack Router
+- Squads
+- Tailwind v4 + shadcn
+- UI/UX Pro Max
 
 ## Done Conditions (hard gates)
 
-- Gate 0 doc updated and matches real CLI command
-- Add Agent modal works end-to-end
-- Turnkey wallet created and publicKey stored
-- Connect code exchange produces session token; token saved to .env via terminal command
-- agent.status works using token
-- lint/typecheck/build/tests pass
-- QA notes written
-- DONE: 0021 written to docs/PROGRESS.md
+- [ ] lint passes
+- [ ] typecheck passes
+- [ ] build passes
+- [ ] tests pass (at least: unit tests for limit decision + request status transitions)
+- [ ] request flow works in dev against a configured RPC
+- [ ] completion marker written: DONE: CB-AGENT-SPEND-001 in docs/PROGRESS.md

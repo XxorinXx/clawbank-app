@@ -51,6 +51,7 @@ function formatDate(timestamp: number): string {
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     active: 'bg-green-50 text-green-700',
+    connected: 'bg-gray-100 text-gray-500',
     provisioning: 'bg-yellow-50 text-yellow-700',
     paused: 'bg-gray-100 text-gray-500',
     revoked: 'bg-gray-100 text-gray-500',
@@ -58,6 +59,7 @@ function StatusBadge({ status }: { status: string }) {
 
   const labels: Record<string, string> = {
     active: 'Active',
+    connected: 'Connected',
     provisioning: 'Provisioning',
     paused: 'Disconnected',
     revoked: 'Revoked',
@@ -85,7 +87,7 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
   const [revokingAgentId, setRevokingAgentId] = useState<Id<"agents"> | null>(null)
 
-  const activeAgents = agents?.filter(a => a.status === 'active') ?? []
+  const visibleAgents = agents?.filter(a => a.status === 'active') ?? []
 
   // Loading skeleton
   if (agents === undefined) {
@@ -105,7 +107,7 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
   }
 
   // Empty state
-  if (activeAgents.length === 0) {
+  if (visibleAgents.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-gray-400">
         <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
@@ -160,7 +162,7 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      {(activeAgents as Agent[]).map((agent) => {
+      {(visibleAgents as Agent[]).map((agent) => {
         const color = getAgentColor(agent.name)
         const limit = agent.limits[0]
 

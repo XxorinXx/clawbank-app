@@ -92,7 +92,9 @@ export const buildSpendingLimitUpdateTx = action({
       currentTransactionIndex,
       oldOnchainCreateKey: oldOnchainCreateKey ?? null,
       createKeyPublicKey: createKey.publicKey,
-      tokenMint: new PublicKey(args.tokenMint),
+      tokenMint: args.tokenMint === "So11111111111111111111111111111111111111112"
+        ? PublicKey.default
+        : new PublicKey(args.tokenMint),
       limitAmount: args.limitAmount,
       decimals,
       periodType: args.periodType,

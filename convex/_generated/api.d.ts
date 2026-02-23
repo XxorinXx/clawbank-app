@@ -9,6 +9,7 @@
  */
 
 import type * as actions_agentAuth from "../actions/agentAuth.js";
+import type * as actions_agentTransfer from "../actions/agentTransfer.js";
 import type * as actions_buildAgentActivationTx from "../actions/buildAgentActivationTx.js";
 import type * as actions_buildAgentRevocationTx from "../actions/buildAgentRevocationTx.js";
 import type * as actions_createWorkspace from "../actions/createWorkspace.js";
@@ -22,16 +23,20 @@ import type * as actions_getTokenPrices from "../actions/getTokenPrices.js";
 import type * as actions_getWorkspaceBalance from "../actions/getWorkspaceBalance.js";
 import type * as actions_provisionAgent from "../actions/provisionAgent.js";
 import type * as actions_removeMember from "../actions/removeMember.js";
+import type * as actions_transferApproval from "../actions/transferApproval.js";
 import type * as actions_updateSpendingLimitOnchain from "../actions/updateSpendingLimitOnchain.js";
 import type * as env from "../env.js";
 import type * as internals_agentHelpers from "../internals/agentHelpers.js";
 import type * as internals_cacheHelpers from "../internals/cacheHelpers.js";
+import type * as internals_transferHelpers from "../internals/transferHelpers.js";
 import type * as internals_workspaceHelpers from "../internals/workspaceHelpers.js";
+import type * as lib_spendingLimitPolicy from "../lib/spendingLimitPolicy.js";
 import type * as lib_txBuilders from "../lib/txBuilders.js";
 import type * as mutations_agents from "../mutations/agents.js";
 import type * as queries_agents from "../queries/agents.js";
 import type * as queries_getWorkspaceMembers from "../queries/getWorkspaceMembers.js";
 import type * as queries_listUserWorkspaces from "../queries/listUserWorkspaces.js";
+import type * as queries_transferRequests from "../queries/transferRequests.js";
 import type * as users from "../users.js";
 
 import type {
@@ -42,6 +47,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/agentAuth": typeof actions_agentAuth;
+  "actions/agentTransfer": typeof actions_agentTransfer;
   "actions/buildAgentActivationTx": typeof actions_buildAgentActivationTx;
   "actions/buildAgentRevocationTx": typeof actions_buildAgentRevocationTx;
   "actions/createWorkspace": typeof actions_createWorkspace;
@@ -55,16 +61,20 @@ declare const fullApi: ApiFromModules<{
   "actions/getWorkspaceBalance": typeof actions_getWorkspaceBalance;
   "actions/provisionAgent": typeof actions_provisionAgent;
   "actions/removeMember": typeof actions_removeMember;
+  "actions/transferApproval": typeof actions_transferApproval;
   "actions/updateSpendingLimitOnchain": typeof actions_updateSpendingLimitOnchain;
   env: typeof env;
   "internals/agentHelpers": typeof internals_agentHelpers;
   "internals/cacheHelpers": typeof internals_cacheHelpers;
+  "internals/transferHelpers": typeof internals_transferHelpers;
   "internals/workspaceHelpers": typeof internals_workspaceHelpers;
+  "lib/spendingLimitPolicy": typeof lib_spendingLimitPolicy;
   "lib/txBuilders": typeof lib_txBuilders;
   "mutations/agents": typeof mutations_agents;
   "queries/agents": typeof queries_agents;
   "queries/getWorkspaceMembers": typeof queries_getWorkspaceMembers;
   "queries/listUserWorkspaces": typeof queries_listUserWorkspaces;
+  "queries/transferRequests": typeof queries_transferRequests;
   users: typeof users;
 }>;
 

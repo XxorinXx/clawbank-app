@@ -221,3 +221,37 @@ docs/AGENT_INSTALL.md updated: replaced `npx @clawbank/cli` with `node scripts/a
 - Lead handled: Gate 0 doc, schema, env helpers, QA, type fixes, coordination
 
 DONE: 0021
+
+## CB-AGENT-SPEND-001 — Agent Spend + Human Approval Transfer Flow
+
+### What shipped
+- Two end-to-end SOL transfer flows: auto-execute under spending limit + Squads proposal for over-limit
+- Agent-initiated transfer requests with shortNote + description + what/why metadata
+- Spending limit decision logic as pure testable function with period expiry handling
+- Turnkey-signed on-chain execution via Squads spendingLimitUse instruction
+- Squads vault transaction + proposal creation for over-limit transfers
+- Human approve/deny flow with build-then-user-signs pattern
+- Requests tab as core operating surface with expand/collapse cards
+- Status badges: Processing, Executed, Pending Approval, Approved, Denied, Failed
+- Expandable details: description, agent name, spending limit snapshot, Solscan links
+- 17 new unit tests for spending limit decision logic + conversions
+
+### Checks
+- **Lint**: PASS (0 new errors)
+- **Typecheck**: PASS (0 new errors)
+- **Build**: PASS
+- **Tests**: PASS (52 total: 17 new spending limit tests + 35 existing)
+
+### Files changed
+- `convex/schema.ts` — Added `transfer_requests` table
+- `convex/lib/spendingLimitPolicy.ts` — Pure spending limit decision logic
+- `convex/lib/__tests__/spendingLimitPolicy.test.ts` — 17 unit tests
+- `convex/internals/transferHelpers.ts` — Internal mutations/queries for transfer requests
+- `convex/actions/agentTransfer.ts` — Agent transfer action (both paths)
+- `convex/actions/transferApproval.ts` — Human approve/deny actions
+- `convex/queries/transferRequests.ts` — Transfer request list query
+- `src/components/RequestsTab.tsx` — Requests tab UI component
+- `src/routes/workspaces.tsx` — Wired RequestsTab, default tab = requests
+- `docs/DECISIONS.md` — Architecture decisions for CB-AGENT-SPEND-001
+
+DONE: CB-AGENT-SPEND-001

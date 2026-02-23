@@ -1,112 +1,107 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { motion } from 'motion/react'
-import { useAuth } from '~/hooks/useAuth'
-import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQuery } from 'convex/react'
-import { useConvexAuth } from 'convex/react'
-import { api } from '../../convex/_generated/api'
-import {
-  Plus, LogOut, KeyRound,
-  Inbox, Activity, Bot, Users, Wallet,
-} from 'lucide-react'
-import { toast } from 'sonner'
-import { CreateWorkspaceModal } from '~/components/CreateWorkspaceModal'
-import { BalanceHeader } from '~/components/BalanceHeader'
-import { TokenListModal } from '~/components/TokenListModal'
-import { DrawerTabs, type TabItem } from '~/components/DrawerTabs'
-import { TabPlaceholder } from '~/components/TabPlaceholder'
-import { MembersTab } from '~/components/MembersTab'
-import { AgentsTab } from '~/components/AgentsTab'
-import { AddAgentModal } from '~/components/AddAgentModal'
-import { useWorkspaceBalance } from '~/hooks/useWorkspaceBalance'
-import { Id } from '../../convex/_generated/dataModel'
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { motion } from "motion/react";
+import { useAuth } from "~/hooks/useAuth";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { Plus, LogOut, KeyRound, Inbox, Activity, Bot, Users, Wallet } from "lucide-react";
+import { toast } from "sonner";
+import { CreateWorkspaceModal } from "~/components/CreateWorkspaceModal";
+import { BalanceHeader } from "~/components/BalanceHeader";
+import { TokenListModal } from "~/components/TokenListModal";
+import { DrawerTabs, type TabItem } from "~/components/DrawerTabs";
+import { TabPlaceholder } from "~/components/TabPlaceholder";
+import { MembersTab } from "~/components/MembersTab";
+import { AgentsTab } from "~/components/AgentsTab";
+import { RequestsTab } from "~/components/RequestsTab";
+import { AddAgentModal } from "~/components/AddAgentModal";
+import { useWorkspaceBalance } from "~/hooks/useWorkspaceBalance";
+import { Id } from "../../convex/_generated/dataModel";
 
-export const Route = createFileRoute('/workspaces')({
+export const Route = createFileRoute("/workspaces")({
   component: WorkspacesPage,
-} as const)
+} as const);
 
 interface Workspace {
-  _id: string
-  name: string
-  vaultAddress: string
-  createdAt: number
+  _id: string;
+  name: string;
+  vaultAddress: string;
+  createdAt: number;
 }
 
 function truncateAddress(address: string): string {
-  if (address.length <= 8) return address
-  return `${address.slice(0, 4)}...${address.slice(-4)}`
+  if (address.length <= 8) return address;
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
 function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 const DRAWER_TABS: TabItem[] = [
-  { key: 'requests', label: 'Requests', icon: <Inbox size={14} /> },
-  { key: 'activity', label: 'Activity', icon: <Activity size={14} /> },
-  { key: 'agents', label: 'Agents', icon: <Bot size={14} /> },
-  { key: 'humans', label: 'Humans', icon: <Users size={14} /> },
-  { key: 'balances', label: 'Balances', icon: <Wallet size={14} /> },
-]
+  { key: "requests", label: "Requests", icon: <Inbox size={14} /> },
+  { key: "agents", label: "Agents", icon: <Bot size={14} /> },
+  { key: "humans", label: "Humans", icon: <Users size={14} /> },
+  { key: "activity", label: "Activity", icon: <Activity size={14} /> },
+
+  // { key: 'balances', label: 'Balances', icon: <Wallet size={14} /> },
+];
 
 function WorkspacesPage() {
-  const { isAuthenticated, isLoading, userEmail, walletAddress, logout, exportWallet } =
-    useAuth()
-  const navigate = useNavigate()
-  const { isAuthenticated: isConvexAuthenticated } = useConvexAuth()
-  const getOrCreateUser = useMutation(api.users.getOrCreateUser)
-  const didSync = useRef(false)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<Id<"workspaces"> | null>(null)
-  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState('humans')
-  const [isAddAgentOpen, setIsAddAgentOpen] = useState(false)
+  const { isAuthenticated, isLoading, userEmail, walletAddress, logout, exportWallet } = useAuth();
+  const navigate = useNavigate();
+  const { isAuthenticated: isConvexAuthenticated } = useConvexAuth();
+  const getOrCreateUser = useMutation(api.users.getOrCreateUser);
+  const didSync = useRef(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<Id<"workspaces"> | null>(null);
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("requests");
+  const [isAddAgentOpen, setIsAddAgentOpen] = useState(false);
 
   const workspaces = useQuery(
     api.queries.listUserWorkspaces.listUserWorkspaces,
-    isConvexAuthenticated ? {} : 'skip',
-  ) as Workspace[] | undefined
+    isConvexAuthenticated ? {} : "skip",
+  ) as Workspace[] | undefined;
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      void navigate({ to: '/' })
+      void navigate({ to: "/" });
     }
-  }, [isLoading, isAuthenticated, navigate])
+  }, [isLoading, isAuthenticated, navigate]);
 
   useEffect(() => {
-    if (!isConvexAuthenticated || !walletAddress || !userEmail || didSync.current)
-      return
-    didSync.current = true
+    if (!isConvexAuthenticated || !walletAddress || !userEmail || didSync.current) return;
+    didSync.current = true;
     getOrCreateUser({ email: userEmail, walletAddress }).catch(() => {
-      didSync.current = false
-    })
-  }, [isConvexAuthenticated, walletAddress, userEmail, getOrCreateUser])
+      didSync.current = false;
+    });
+  }, [isConvexAuthenticated, walletAddress, userEmail, getOrCreateUser]);
 
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-gray-500">Loading...</p>
       </div>
-    )
+    );
   }
 
   if (!isAuthenticated) {
-    return null
+    return null;
   }
 
-  const hasWorkspaces = workspaces !== undefined && workspaces.length > 0
+  const hasWorkspaces = workspaces !== undefined && workspaces.length > 0;
 
   return (
     <div className="relative min-h-screen px-4">
       {/* Header */}
       <div className="mx-auto flex max-w-3xl items-center justify-between py-6">
-        <h1 className="text-xl font-bold text-gray-900">
-          {hasWorkspaces ? 'Workspaces' : ''}
-        </h1>
+        <h1 className="text-xl font-bold text-gray-900">{hasWorkspaces ? "Workspaces" : ""}</h1>
         <div className="flex items-center gap-3">
           {hasWorkspaces && (
             <motion.button
@@ -156,26 +151,22 @@ function WorkspacesPage() {
                 whileHover={{ scale: 1.005 }}
                 whileTap={{ scale: 0.995 }}
                 onClick={() => {
-                  const id = ws._id as Id<"workspaces">
+                  const id = ws._id as Id<"workspaces">;
                   if (selectedWorkspaceId === id) {
-                    setSelectedWorkspaceId(null)
-                    setIsTokenModalOpen(false)
+                    setSelectedWorkspaceId(null);
+                    setIsTokenModalOpen(false);
                   } else {
-                    setSelectedWorkspaceId(id)
-                    setIsTokenModalOpen(false)
+                    setSelectedWorkspaceId(id);
+                    setIsTokenModalOpen(false);
                   }
                 }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     <h3 className="font-semibold text-gray-900">{ws.name}</h3>
-                    <p className="font-mono text-sm text-gray-500">
-                      {truncateAddress(ws.vaultAddress)}
-                    </p>
+                    <p className="font-mono text-sm text-gray-500">{truncateAddress(ws.vaultAddress)}</p>
                   </div>
-                  <span className="text-xs text-gray-400">
-                    {formatDate(ws.createdAt)}
-                  </span>
+                  <span className="text-xs text-gray-400">{formatDate(ws.createdAt)}</span>
                 </div>
               </motion.div>
             ))}
@@ -187,7 +178,7 @@ function WorkspacesPage() {
             className="flex w-full max-w-md flex-col items-center text-center"
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
           >
             {/* Card with plus icon */}
             <motion.div
@@ -199,9 +190,7 @@ function WorkspacesPage() {
               <Plus size={48} className="text-gray-400" />
             </motion.div>
 
-            <h1 className="text-2xl font-bold text-gray-900">
-              Welcome to ClawBank
-            </h1>
+            <h1 className="text-2xl font-bold text-gray-900">Welcome to ClawBank</h1>
             <p className="mt-3 max-w-[240px] text-center text-sm leading-relaxed text-gray-400">
               Create your first workspace to get started
             </p>
@@ -220,7 +209,7 @@ function WorkspacesPage() {
                 className="cursor-pointer rounded-full px-4 py-2 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => toast('Coming soon')}
+                onClick={() => toast("Coming soon")}
               >
                 Import workspace
               </motion.button>
@@ -242,18 +231,15 @@ function WorkspacesPage() {
           onOpenAddAgent={() => setIsAddAgentOpen(true)}
           onCloseAddAgent={() => setIsAddAgentOpen(false)}
           onClose={() => {
-            setSelectedWorkspaceId(null)
-            setIsTokenModalOpen(false)
+            setSelectedWorkspaceId(null);
+            setIsTokenModalOpen(false);
           }}
         />
       )}
 
-      <CreateWorkspaceModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
+      <CreateWorkspaceModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
-  )
+  );
 }
 
 function BalanceHeaderSkeleton() {
@@ -271,7 +257,7 @@ function BalanceHeaderSkeleton() {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function WorkspaceDrawer({
@@ -286,35 +272,35 @@ function WorkspaceDrawer({
   onCloseAddAgent,
   onClose,
 }: {
-  workspaceId: Id<"workspaces">
-  isTokenModalOpen: boolean
-  onOpenTokenModal: () => void
-  onCloseTokenModal: () => void
-  activeTab: string
-  onTabChange: (key: string) => void
-  isAddAgentOpen: boolean
-  onOpenAddAgent: () => void
-  onCloseAddAgent: () => void
-  onClose: () => void
+  workspaceId: Id<"workspaces">;
+  isTokenModalOpen: boolean;
+  onOpenTokenModal: () => void;
+  onCloseTokenModal: () => void;
+  activeTab: string;
+  onTabChange: (key: string) => void;
+  isAddAgentOpen: boolean;
+  onOpenAddAgent: () => void;
+  onCloseAddAgent: () => void;
+  onClose: () => void;
 }) {
-  const { data: balanceData, isLoading: balanceLoading } = useWorkspaceBalance(workspaceId)
+  const { data: balanceData, isLoading: balanceLoading } = useWorkspaceBalance(workspaceId);
 
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'humans':
-        return <MembersTab workspaceId={workspaceId} />
-      case 'requests':
-        return <TabPlaceholder icon={<Inbox size={28} className="text-gray-400" />} label="Requests" />
-      case 'activity':
-        return <TabPlaceholder icon={<Activity size={28} className="text-gray-400" />} label="Activity" />
-      case 'agents':
-        return <AgentsTab workspaceId={workspaceId} onAddAgent={onOpenAddAgent} />
-      case 'balances':
-        return <TabPlaceholder icon={<Wallet size={28} className="text-gray-400" />} label="Balances" />
+      case "humans":
+        return <MembersTab workspaceId={workspaceId} />;
+      case "requests":
+        return <RequestsTab workspaceId={workspaceId} />;
+      case "activity":
+        return <TabPlaceholder icon={<Activity size={28} className="text-gray-400" />} label="Activity" />;
+      case "agents":
+        return <AgentsTab workspaceId={workspaceId} onAddAgent={onOpenAddAgent} />;
+      case "balances":
+        return <TabPlaceholder icon={<Wallet size={28} className="text-gray-400" />} label="Balances" />;
       default:
-        return null
+        return null;
     }
-  }
+  };
 
   return (
     <motion.div
@@ -334,11 +320,7 @@ function WorkspaceDrawer({
             onOpenModal={onOpenTokenModal}
             onClose={onClose}
           />
-          <TokenListModal
-            isOpen={isTokenModalOpen}
-            onClose={onCloseTokenModal}
-            tokens={balanceData.tokens}
-          />
+          <TokenListModal isOpen={isTokenModalOpen} onClose={onCloseTokenModal} tokens={balanceData.tokens} />
         </>
       ) : (
         <div className="mb-4 flex justify-end">
@@ -364,19 +346,11 @@ function WorkspaceDrawer({
       </div>
 
       {/* Tabs */}
-      <DrawerTabs
-        items={DRAWER_TABS}
-        activeKey={activeTab}
-        onChange={onTabChange}
-      >
+      <DrawerTabs items={DRAWER_TABS} activeKey={activeTab} onChange={onTabChange}>
         {renderTabContent()}
       </DrawerTabs>
 
-      <AddAgentModal
-        isOpen={isAddAgentOpen}
-        onClose={onCloseAddAgent}
-        workspaceId={workspaceId}
-      />
+      <AddAgentModal isOpen={isAddAgentOpen} onClose={onCloseAddAgent} workspaceId={workspaceId} />
     </motion.div>
-  )
+  );
 }

@@ -92,6 +92,13 @@ export const buildAgentActivationTx = action({
     const createKey = Keypair.generate();
     const { blockhash } = await connection.getLatestBlockhash();
 
+    // For native SOL, Squads expects mint = PublicKey.default (all zeros)
+    const SOL_MINT = "So11111111111111111111111111111111111111112";
+    const tokenMintPubkey =
+      limit.tokenMint === SOL_MINT
+        ? PublicKey.default
+        : new PublicKey(limit.tokenMint);
+
     const { tx } = buildAgentActivationTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
@@ -99,7 +106,7 @@ export const buildAgentActivationTx = action({
       agentPubkey,
       currentTransactionIndex,
       createKeyPublicKey: createKey.publicKey,
-      tokenMint: new PublicKey(limit.tokenMint),
+      tokenMint: tokenMintPubkey,
       limitAmount: limit.limitAmount,
       decimals,
       periodType: limit.periodType,
