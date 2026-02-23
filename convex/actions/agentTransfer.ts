@@ -1,6 +1,5 @@
 "use node";
 
-import crypto from "node:crypto";
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
@@ -13,19 +12,12 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
-import { Turnkey } from "@turnkey/sdk-server";
-import {
-  getRpcUrl,
-  getSponsorKey,
-  getTurnkeyApiPublicKey,
-  getTurnkeyApiPrivateKey,
-  getTurnkeyOrgId,
-} from "../env";
+import { getRpcUrl, getSponsorKey } from "../env";
+import { signWithTurnkey, extractErrorMessage, NATIVE_SOL_MINT } from "../lib/turnkeyHelpers";
 import { checkSpendingLimit, solToLamports, lamportsToSol } from "../lib/spendingLimitPolicy";
+import { sha256Hex } from "../lib/connectCode";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-
-const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 interface TransferResult {
   requestId: string;
@@ -44,10 +36,7 @@ export const agentTransfer = action({
   },
   handler: async (ctx, args): Promise<TransferResult> => {
     // ── Auth ──────────────────────────────────────────────────────────
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(args.sessionToken)
-      .digest("hex");
+    const tokenHash = sha256Hex(args.sessionToken);
 
     const session = await ctx.runQuery(
       internal.internals.agentHelpers.getSessionByHash,
@@ -111,7 +100,7 @@ export const agentTransfer = action({
       internal.internals.agentHelpers.getSpendingLimitsByAgent,
       { agentId },
     );
-    const solLimit = limits.find((l) => l.tokenMint === SOL_MINT);
+    const solLimit = limits.find((l: { tokenMint: string }) => l.tokenMint === NATIVE_SOL_MINT);
 
     let allowed = false;
     let snapshot: { limitAmount: number; spentAmount: number; periodType: string };
@@ -125,7 +114,7 @@ export const agentTransfer = action({
       const result = checkSpendingLimit({
         spentAmount: solLimit.spentAmount,
         limitAmount: solLimit.limitAmount,
-        requestAmountLamports: lamportsToSol(amountLamports),
+        requestAmount: args.amountSol,
         periodStart: solLimit.periodStart,
         periodType: solLimit.periodType,
       });
@@ -272,7 +261,7 @@ async function executeUnderLimit(
       internal.internals.transferHelpers.updateSpentAmount,
       {
         agentId: p.agentId,
-        tokenMint: SOL_MINT,
+        tokenMint: NATIVE_SOL_MINT,
         additionalSpent: lamportsToSol(p.amountLamports),
       },
     );
@@ -284,7 +273,7 @@ async function executeUnderLimit(
       action: "transfer_executed",
       txSignature: signature,
       amount: p.amountLamports,
-      tokenMint: SOL_MINT,
+      tokenMint: NATIVE_SOL_MINT,
     });
 
     return {
@@ -293,15 +282,14 @@ async function executeUnderLimit(
       txSignature: signature,
     };
   } catch (err: unknown) {
-    const errorMessage =
-      err instanceof Error ? err.message : "Unknown error";
+    const errorMsg = extractErrorMessage(err);
 
     await ctx.runMutation(
       internal.internals.transferHelpers.updateTransferRequestStatus,
       {
         requestId,
         status: "failed" as const,
-        errorMessage,
+        errorMessage: errorMsg,
       },
     );
 
@@ -309,10 +297,10 @@ async function executeUnderLimit(
       workspaceId: p.workspaceId,
       agentId: p.agentId,
       action: "transfer_failed",
-      metadata: { error: errorMessage },
+      metadata: { error: errorMsg },
     });
 
-    throw new Error(`Transfer execution failed: ${errorMessage}`);
+    throw new Error(`Transfer execution failed: ${errorMsg}`);
   }
 }
 
@@ -445,7 +433,7 @@ async function createProposal(
       action: "transfer_proposal_created",
       txSignature: signature,
       amount: p.amountLamports,
-      tokenMint: SOL_MINT,
+      tokenMint: NATIVE_SOL_MINT,
       metadata: {
         proposalAddress: proposalPda.toBase58(),
         proposalIndex: Number(nextTransactionIndex),
@@ -458,15 +446,14 @@ async function createProposal(
       proposalAddress: proposalPda.toBase58(),
     };
   } catch (err: unknown) {
-    const errorMessage =
-      err instanceof Error ? err.message : "Unknown error";
+    const errorMsg = extractErrorMessage(err);
 
     await ctx.runMutation(
       internal.internals.transferHelpers.updateTransferRequestStatus,
       {
         requestId,
         status: "failed" as const,
-        errorMessage,
+        errorMessage: errorMsg,
       },
     );
 
@@ -474,50 +461,10 @@ async function createProposal(
       workspaceId: p.workspaceId,
       agentId: p.agentId,
       action: "transfer_proposal_failed",
-      metadata: { error: errorMessage },
+      metadata: { error: errorMsg },
     });
 
-    throw new Error(`Proposal creation failed: ${errorMessage}`);
+    throw new Error(`Proposal creation failed: ${errorMsg}`);
   }
 }
 
-// ── Turnkey signing helper ─────────────────────────────────────────────
-
-async function signWithTurnkey(
-  tx: VersionedTransaction,
-  signWithAddress: string,
-): Promise<VersionedTransaction> {
-  const turnkey = new Turnkey({
-    apiBaseUrl: "https://api.turnkey.com",
-    apiPublicKey: getTurnkeyApiPublicKey(),
-    apiPrivateKey: getTurnkeyApiPrivateKey(),
-    defaultOrganizationId: getTurnkeyOrgId(),
-  });
-  const client = await turnkey.apiClient();
-
-  const messageBytes = tx.message.serialize();
-  const signResult = await client.signRawPayload({
-    signWith: signWithAddress,
-    payload: Buffer.from(messageBytes).toString("hex"),
-    encoding: "PAYLOAD_ENCODING_HEXADECIMAL",
-    hashFunction: "HASH_FUNCTION_NOT_APPLICABLE",
-  });
-
-  // Reconstruct the signature from r + s (each 32 bytes hex = 64 chars)
-  const sigBytes = Buffer.from(
-    signResult.r + signResult.s,
-    "hex",
-  );
-
-  // Add the signature at the agent's position
-  const agentPubkey = new PublicKey(signWithAddress);
-  const signerIndex = tx.message.staticAccountKeys.findIndex((key) =>
-    key.equals(agentPubkey),
-  );
-  if (signerIndex === -1) {
-    throw new Error("Agent public key not found in transaction signers");
-  }
-  tx.signatures[signerIndex] = sigBytes;
-
-  return tx;
-}

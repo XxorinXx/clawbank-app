@@ -8,9 +8,11 @@ import {
   Connection,
   Keypair,
   PublicKey,
+  VersionedTransaction,
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
 import { buildCreateWorkspaceTxCore } from "../lib/txBuilders";
+import { extractErrorMessage } from "../lib/turnkeyHelpers";
 
 const RATE_LIMIT_MS = 30_000;
 
@@ -143,7 +145,6 @@ export const submitCreateWorkspaceTx = action({
     const connection = new Connection(getRpcUrl(), "confirmed");
 
     const txBytes = Buffer.from(args.signedTx, "base64");
-    const { VersionedTransaction } = await import("@solana/web3.js");
     const tx = VersionedTransaction.deserialize(txBytes);
 
     const { blockhash, lastValidBlockHeight } =
@@ -155,9 +156,7 @@ export const submitCreateWorkspaceTx = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to create multisig on Solana: ${message}`);
+      throw new Error(`Failed to create multisig on Solana: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     try {
@@ -166,9 +165,7 @@ export const submitCreateWorkspaceTx = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown confirmation error";
-      throw new Error(`Multisig transaction failed to confirm: ${message}`);
+      throw new Error(`Multisig transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`);
     }
 
     // On-chain confirmed — now store in DB

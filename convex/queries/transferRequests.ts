@@ -1,11 +1,11 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
+import { requireWorkspaceMember } from "../internals/workspaceHelpers";
 
 export const list = query({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
+    await requireWorkspaceMember(ctx, args.workspaceId);
 
     const requests = await ctx.db
       .query("transfer_requests")

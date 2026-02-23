@@ -1,6 +1,7 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
+import { requireWorkspaceMember } from "../internals/workspaceHelpers";
 
 type MemberInfo = {
   _id: Id<"workspace_members">;
@@ -21,16 +22,7 @@ export const getWorkspaceMembers = query({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ members: MemberInfo[]; invites: InviteInfo[] }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Unauthenticated");
-    }
-
-    // Verify workspace exists
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace) {
-      throw new Error("Workspace not found");
-    }
+    await requireWorkspaceMember(ctx, args.workspaceId);
 
     // Get members
     const members = await ctx.db

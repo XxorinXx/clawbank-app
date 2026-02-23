@@ -5,6 +5,7 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { Doc } from "../_generated/dataModel";
+import { sha256Hex } from "../lib/connectCode";
 
 interface ExchangeResult {
   sessionToken: string;
@@ -33,10 +34,7 @@ export const exchangeConnectCode = action({
     const connectCode = args.connectCode.trim().toUpperCase();
 
     // Hash the connect code to look up the session
-    const codeHash = crypto
-      .createHash("sha256")
-      .update(connectCode)
-      .digest("hex");
+    const codeHash = sha256Hex(connectCode);
 
     // Look up the connect-code session
     const session = await ctx.runQuery(
@@ -54,10 +52,7 @@ export const exchangeConnectCode = action({
 
     // Generate a new session token (returned once, never stored raw)
     const sessionToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = crypto
-      .createHash("sha256")
-      .update(sessionToken)
-      .digest("hex");
+    const hashedToken = sha256Hex(sessionToken);
 
     const now = Date.now();
     const expiresAt = now + 24 * 60 * 60 * 1000; // 24 hours
@@ -123,10 +118,7 @@ export const agentStatus = action({
   args: { sessionToken: v.string() },
   handler: async (ctx, args): Promise<StatusResult> => {
     // Hash the session token
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(args.sessionToken)
-      .digest("hex");
+    const tokenHash = sha256Hex(args.sessionToken);
 
     // Look up the session
     const session = await ctx.runQuery(

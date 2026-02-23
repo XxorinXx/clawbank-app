@@ -3,11 +3,14 @@ import { motion } from 'motion/react'
 import { Bot, Loader2, Plus, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQuery, useAction } from 'convex/react'
-import { useSolanaWallets } from '@privy-io/react-auth'
-import { VersionedTransaction } from '@solana/web3.js'
 import { api } from '../../convex/_generated/api'
 import { Id } from '../../convex/_generated/dataModel'
 import { EditBudgetModal } from './EditBudgetModal'
+import { StatusBadge, AGENT_STATUS_STYLES, AGENT_STATUS_LABELS } from './ui/StatusBadge'
+import { ListSkeleton } from './ui/ListSkeleton'
+import { EmptyState } from './ui/EmptyState'
+import { useSignTransaction } from '~/hooks/useSignTransaction'
+import { formatDate } from '~/utils/format'
 
 interface AgentLimit {
   tokenMint: string
@@ -40,40 +43,6 @@ function truncateMint(mint: string): string {
   return `${mint.slice(0, 4)}…${mint.slice(-4)}`
 }
 
-function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    active: 'bg-green-50 text-green-700',
-    connected: 'bg-gray-100 text-gray-500',
-    provisioning: 'bg-yellow-50 text-yellow-700',
-    paused: 'bg-gray-100 text-gray-500',
-    revoked: 'bg-gray-100 text-gray-500',
-  }
-
-  const labels: Record<string, string> = {
-    active: 'Active',
-    connected: 'Connected',
-    provisioning: 'Provisioning',
-    paused: 'Disconnected',
-    revoked: 'Revoked',
-  }
-
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] ?? 'bg-gray-100 text-gray-500'}`}
-    >
-      {labels[status] ?? status}
-    </span>
-  )
-}
-
 interface AgentsTabProps {
   workspaceId: Id<"workspaces">
   onAddAgent: () => void
@@ -81,50 +50,26 @@ interface AgentsTabProps {
 
 export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
   const agents = useQuery(api.queries.agents.list, { workspaceId })
-  const { wallets: solanaWallets } = useSolanaWallets()
   const buildRevocationTx = useAction(api.actions.buildAgentRevocationTx.buildAgentRevocationTx)
   const submitRevocationTx = useAction(api.actions.buildAgentRevocationTx.submitAgentRevocationTx)
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null)
   const [revokingAgentId, setRevokingAgentId] = useState<Id<"agents"> | null>(null)
+  const tx = useSignTransaction()
 
-  const visibleAgents = agents?.filter(a => a.status === 'active') ?? []
+  const visibleAgents = agents?.filter((a: Agent) => a.status === 'active') ?? []
 
-  // Loading skeleton
   if (agents === undefined) {
-    return (
-      <div className="space-y-3">
-        {[1, 2].map((i) => (
-          <div key={i} className="flex animate-pulse items-center gap-3 rounded-xl p-3">
-            <div className="h-10 w-10 rounded-full bg-gray-200" />
-            <div className="flex-1 space-y-2">
-              <div className="h-4 w-28 rounded bg-gray-200" />
-              <div className="h-3 w-20 rounded bg-gray-200" />
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+    return <ListSkeleton />
   }
 
-  // Empty state
   if (visibleAgents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-        <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-          <Bot size={28} className="text-gray-400" />
-        </div>
-        <span className="text-sm font-medium">No agents connected</span>
-        <span className="mt-1 text-xs text-gray-300">
-          Connect your first agent to automate transactions
-        </span>
-        <motion.button
-          className="mt-4 cursor-pointer rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-          whileTap={{ scale: 0.98 }}
-          onClick={onAddAgent}
-        >
-          Add Agent
-        </motion.button>
-      </div>
+      <EmptyState
+        icon={<Bot size={28} className="text-gray-400" />}
+        title="No agents connected"
+        description="Connect your first agent to automate transactions"
+        action={{ label: "Add Agent", onClick: onAddAgent }}
+      />
     )
   }
 
@@ -135,29 +80,25 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
     if (!confirmed) return
 
     setRevokingAgentId(agentId)
-    try {
-      const { serializedTx } = await buildRevocationTx({ agentId, workspaceId })
 
-      if (serializedTx) {
-        const txBytes = Uint8Array.from(atob(serializedTx), (c) => c.charCodeAt(0))
-        const tx = VersionedTransaction.deserialize(txBytes)
+    const success = await tx.execute({
+      build: async () => {
+        const result = await buildRevocationTx({ agentId, workspaceId })
+        return result
+      },
+      submit: async ({ signedTx }) => {
+        // If no tx was needed (already revoked), send empty string
+        const txToSubmit = signedTx || ''
+        await submitRevocationTx({ agentId, signedTx: txToSubmit })
+      },
+    })
 
-        const wallet = solanaWallets[0]
-        if (!wallet) throw new Error('No Solana wallet found')
-        const signedTx = await wallet.signTransaction(tx)
-        const signedBase64 = btoa(String.fromCharCode(...signedTx.serialize()))
-
-        await submitRevocationTx({ agentId, signedTx: signedBase64 })
-      } else {
-        await submitRevocationTx({ agentId, signedTx: '' })
-      }
-
+    if (success) {
       toast.success(`${agentName} disconnected`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to disconnect agent')
-    } finally {
-      setRevokingAgentId(null)
+    } else if (tx.error) {
+      toast.error(tx.error)
     }
+    setRevokingAgentId(null)
   }
 
   return (
@@ -185,7 +126,7 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
                 <span className="truncate text-sm font-semibold text-gray-900">
                   {agent.name}
                 </span>
-                <StatusBadge status={agent.status} />
+                <StatusBadge status={agent.status} styles={AGENT_STATUS_STYLES} labels={AGENT_STATUS_LABELS} />
               </div>
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 {limit ? (

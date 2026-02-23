@@ -4,17 +4,9 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 
-interface TokenMetadata {
-  mint: string;
-  symbol: string;
-  name: string;
-  icon?: string;
-  decimals: number;
-}
-
 export const getTokenMetadata = action({
   args: { mints: v.array(v.string()) },
-  handler: async (ctx, args): Promise<TokenMetadata[]> => {
+  handler: async (ctx, args): Promise<Array<{ mint: string; symbol: string; name: string; icon?: string; decimals: number }>> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 

@@ -12,6 +12,7 @@ import {
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
 import { buildAgentActivationTxCore } from "../lib/txBuilders";
+import { extractErrorMessage, NATIVE_SOL_MINT } from "../lib/turnkeyHelpers";
 
 export const buildAgentActivationTx = action({
   args: {
@@ -93,9 +94,8 @@ export const buildAgentActivationTx = action({
     const { blockhash } = await connection.getLatestBlockhash();
 
     // For native SOL, Squads expects mint = PublicKey.default (all zeros)
-    const SOL_MINT = "So11111111111111111111111111111111111111112";
     const tokenMintPubkey =
-      limit.tokenMint === SOL_MINT
+      limit.tokenMint === NATIVE_SOL_MINT
         ? PublicKey.default
         : new PublicKey(limit.tokenMint);
 
@@ -149,9 +149,7 @@ export const submitAgentActivationTx = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to submit activation tx: ${message}`);
+      throw new Error(`Failed to submit activation tx: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     await connection.confirmTransaction(
@@ -165,34 +163,30 @@ export const submitAgentActivationTx = action({
       { agentId: args.agentId, status: "active" },
     );
 
+    // Load agent once for both onchain key update and activity log
+    const agent = await ctx.runQuery(
+      internal.internals.agentHelpers.getAgentById,
+      { agentId: args.agentId },
+    );
+    if (!agent) throw new Error("Agent not found after activation");
+
     // Store on-chain state
     await ctx.runMutation(
       internal.internals.agentHelpers.updateSpendingLimitOnchainKey,
       {
         agentId: args.agentId,
-        workspaceId: (
-          await ctx.runQuery(
-            internal.internals.agentHelpers.getAgentById,
-            { agentId: args.agentId },
-          )
-        )!.workspaceId,
+        workspaceId: agent.workspaceId,
         onchainCreateKey: args.createKey,
       },
     );
 
     // Log activity
-    const agent = await ctx.runQuery(
-      internal.internals.agentHelpers.getAgentById,
-      { agentId: args.agentId },
-    );
-    if (agent) {
-      await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
-        workspaceId: agent.workspaceId,
-        agentId: args.agentId,
-        action: "agent_activated_onchain",
-        txSignature: signature,
-      });
-    }
+    await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
+      workspaceId: agent.workspaceId,
+      agentId: args.agentId,
+      action: "agent_activated_onchain",
+      txSignature: signature,
+    });
 
     return { txSignature: signature };
   },

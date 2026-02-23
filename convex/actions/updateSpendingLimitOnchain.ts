@@ -12,6 +12,7 @@ import {
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
 import { buildSpendingLimitUpdateTxCore } from "../lib/txBuilders";
+import { extractErrorMessage, NATIVE_SOL_MINT } from "../lib/turnkeyHelpers";
 
 export const buildSpendingLimitUpdateTx = action({
   args: {
@@ -92,7 +93,7 @@ export const buildSpendingLimitUpdateTx = action({
       currentTransactionIndex,
       oldOnchainCreateKey: oldOnchainCreateKey ?? null,
       createKeyPublicKey: createKey.publicKey,
-      tokenMint: args.tokenMint === "So11111111111111111111111111111111111111112"
+      tokenMint: args.tokenMint === NATIVE_SOL_MINT
         ? PublicKey.default
         : new PublicKey(args.tokenMint),
       limitAmount: args.limitAmount,
@@ -145,9 +146,7 @@ export const submitSpendingLimitUpdateTx = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to update spending limit on-chain: ${message}`);
+      throw new Error(`Failed to update spending limit on-chain: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     try {
@@ -156,10 +155,8 @@ export const submitSpendingLimitUpdateTx = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown confirmation error";
       throw new Error(
-        `Spending limit transaction failed to confirm: ${message}`,
+        `Spending limit transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`,
       );
     }
 

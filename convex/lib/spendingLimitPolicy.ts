@@ -12,11 +12,19 @@ const PERIOD_DURATION_MS: Record<string, number> = {
 export interface SpendingLimitCheck {
   spentAmount: number;
   limitAmount: number;
-  requestAmountLamports: number;
+  /** The request amount in the same unit as limitAmount/spentAmount (SOL, not lamports). */
+  requestAmount: number;
   periodStart: number;
   periodType: string;
   now?: number;
 }
+
+/**
+ * @deprecated Use `requestAmount` instead. This alias exists for backwards compatibility.
+ */
+export type SpendingLimitCheckLegacy = Omit<SpendingLimitCheck, "requestAmount"> & {
+  requestAmountLamports: number;
+};
 
 export interface SpendingLimitResult {
   allowed: boolean;
@@ -31,11 +39,14 @@ export interface SpendingLimitResult {
  * If the period has expired, spentAmount resets to 0 for the decision.
  * Returns whether the transfer is allowed and the remaining budget.
  */
-export function checkSpendingLimit(params: SpendingLimitCheck): SpendingLimitResult {
+export function checkSpendingLimit(params: SpendingLimitCheck | SpendingLimitCheckLegacy): SpendingLimitResult {
+  const requestAmount = "requestAmount" in params
+    ? params.requestAmount
+    : (params as SpendingLimitCheckLegacy).requestAmountLamports;
+
   const {
     spentAmount,
     limitAmount,
-    requestAmountLamports,
     periodStart,
     periodType,
     now = Date.now(),
@@ -49,7 +60,7 @@ export function checkSpendingLimit(params: SpendingLimitCheck): SpendingLimitRes
   const periodExpired = now >= periodStart + durationMs;
   const effectiveSpent = periodExpired ? 0 : spentAmount;
   const remaining = Math.max(0, limitAmount - effectiveSpent);
-  const allowed = requestAmountLamports > 0 && (effectiveSpent + requestAmountLamports) <= limitAmount;
+  const allowed = requestAmount > 0 && (effectiveSpent + requestAmount) <= limitAmount;
 
   return { allowed, effectiveSpent, remaining, periodExpired };
 }

@@ -1,6 +1,39 @@
 import { internalMutation, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
+
+/**
+ * Verifies that the caller (by identity) is an authenticated workspace member.
+ * Throws if unauthenticated or not a member.
+ * Reusable across queries that need workspace membership checks.
+ */
+export async function requireWorkspaceMember(
+  ctx: QueryCtx,
+  workspaceId: Id<"workspaces">,
+): Promise<Doc<"users">> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+
+  const user = await ctx.db
+    .query("users")
+    .withIndex("by_token", (q) =>
+      q.eq("tokenIdentifier", identity.tokenIdentifier),
+    )
+    .unique();
+  if (!user) throw new Error("User not found");
+
+  const membership = await ctx.db
+    .query("workspace_members")
+    .withIndex("by_workspace", (q) =>
+      q.eq("workspaceId", workspaceId),
+    )
+    .filter((q) => q.eq(q.field("walletAddress"), user.walletAddress))
+    .unique();
+  if (!membership) throw new Error("Not a member of this workspace");
+
+  return user;
+}
 
 export const getLastCreationTime = internalQuery({
   args: { creatorTokenIdentifier: v.string() },
@@ -85,6 +118,37 @@ export const storeWorkspace = internalMutation({
     }
 
     return workspaceId;
+  },
+});
+
+/**
+ * Checks if a user (by tokenIdentifier) is a member of the given workspace.
+ * Returns the user record if they are a member, throws otherwise.
+ */
+export const assertWorkspaceMember = internalQuery({
+  args: {
+    tokenIdentifier: v.string(),
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args): Promise<Doc<"users">> => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) =>
+        q.eq("tokenIdentifier", args.tokenIdentifier),
+      )
+      .unique();
+    if (!user) throw new Error("User not found");
+
+    const membership = await ctx.db
+      .query("workspace_members")
+      .withIndex("by_workspace", (q) =>
+        q.eq("workspaceId", args.workspaceId),
+      )
+      .filter((q) => q.eq(q.field("walletAddress"), user.walletAddress))
+      .unique();
+    if (!membership) throw new Error("Not a member of this workspace");
+
+    return user;
   },
 });
 

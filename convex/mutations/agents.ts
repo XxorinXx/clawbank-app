@@ -2,6 +2,7 @@ import { mutation } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { Id } from "../_generated/dataModel";
+import { requireWorkspaceMember } from "../internals/workspaceHelpers";
 
 export const create = mutation({
   args: {
@@ -18,9 +19,6 @@ export const create = mutation({
     }),
   },
   handler: async (ctx, args): Promise<{ agentId: Id<"agents"> }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
     // Validate name
     const name = args.name.trim();
     if (name.length === 0) {
@@ -35,27 +33,8 @@ export const create = mutation({
       throw new Error("Budget limit must be greater than zero");
     }
 
-    // Verify caller is a workspace member
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier),
-      )
-      .unique();
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const membership = await ctx.db
-      .query("workspace_members")
-      .withIndex("by_workspace", (q) =>
-        q.eq("workspaceId", args.workspaceId),
-      )
-      .filter((q) => q.eq(q.field("walletAddress"), user.walletAddress))
-      .unique();
-    if (!membership) {
-      throw new Error("Not a member of this workspace");
-    }
+    // Auth + workspace membership check
+    await requireWorkspaceMember(ctx, args.workspaceId);
 
     // Check agent name uniqueness within workspace
     const existingAgent = await ctx.db
@@ -113,9 +92,6 @@ export const updateSpendingLimit = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthenticated");
-
     if (args.limitAmount <= 0) {
       throw new Error("Budget limit must be greater than zero");
     }
@@ -123,23 +99,8 @@ export const updateSpendingLimit = mutation({
     const agent = await ctx.db.get(args.agentId);
     if (!agent) throw new Error("Agent not found");
 
-    // Verify caller is a workspace member
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier),
-      )
-      .unique();
-    if (!user) throw new Error("User not found");
-
-    const membership = await ctx.db
-      .query("workspace_members")
-      .withIndex("by_workspace", (q) =>
-        q.eq("workspaceId", agent.workspaceId),
-      )
-      .filter((q) => q.eq(q.field("walletAddress"), user.walletAddress))
-      .unique();
-    if (!membership) throw new Error("Not a member of this workspace");
+    // Auth + workspace membership check
+    await requireWorkspaceMember(ctx, agent.workspaceId);
 
     // Find existing spending limit for this agent
     const existingLimits = await ctx.db
@@ -151,7 +112,6 @@ export const updateSpendingLimit = mutation({
       .collect();
 
     const existingLimit = existingLimits[0];
-    const oldOnchainCreateKey = existingLimit?.onchainCreateKey;
 
     if (existingLimit && existingLimit.tokenMint === args.tokenMint) {
       // Same token — update amount and period, keep spentAmount
@@ -241,6 +201,17 @@ export const revoke = mutation({
       connectCodeExpiresAt: undefined,
     });
 
+    // Clear onchainCreateKey from spending limits
+    const limits = await ctx.db
+      .query("spending_limits")
+      .withIndex("by_agent_token", (q) => q.eq("agentId", args.agentId))
+      .collect();
+    for (const limit of limits) {
+      if (limit.onchainCreateKey) {
+        await ctx.db.patch(limit._id, { onchainCreateKey: undefined });
+      }
+    }
+
     // Delete all agent_sessions for this agent
     const sessions = await ctx.db
       .query("agent_sessions")
@@ -250,12 +221,24 @@ export const revoke = mutation({
       await ctx.db.delete(session._id);
     }
 
+    // Cancel all pending transfer requests for this agent
+    const requests = await ctx.db
+      .query("transfer_requests")
+      .withIndex("by_agent", (q) => q.eq("agentId", args.agentId))
+      .collect();
+    const now = Date.now();
+    for (const req of requests) {
+      if (req.status === "pending_approval" || req.status === "pending_execution") {
+        await ctx.db.patch(req._id, { status: "denied", updatedAt: now });
+      }
+    }
+
     // Log revocation
     await ctx.db.insert("activity_log", {
       workspaceId: agent.workspaceId,
       agentId: args.agentId,
       action: "agent_revoked",
-      timestamp: Date.now(),
+      timestamp: now,
     });
 
     return { success: true };

@@ -12,6 +12,7 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
+import { extractErrorMessage } from "../lib/turnkeyHelpers";
 
 // ---------------------------------------------------------------------------
 // buildApproveTransferRequest
@@ -114,9 +115,7 @@ export const submitTransferApproval = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to approve transfer on-chain: ${message}`);
+      throw new Error(`Failed to approve transfer on-chain: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     try {
@@ -125,10 +124,8 @@ export const submitTransferApproval = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown confirmation error";
       throw new Error(
-        `Transfer approval transaction failed to confirm: ${message}`,
+        `Transfer approval transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`,
       );
     }
 
@@ -253,9 +250,7 @@ export const submitTransferDenial = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown Solana error";
-      throw new Error(`Failed to deny transfer on-chain: ${message}`);
+      throw new Error(`Failed to deny transfer on-chain: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     try {
@@ -264,10 +259,8 @@ export const submitTransferDenial = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Unknown confirmation error";
       throw new Error(
-        `Transfer denial transaction failed to confirm: ${message}`,
+        `Transfer denial transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`,
       );
     }
 

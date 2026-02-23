@@ -29,3 +29,9 @@ dist-ssr
 
 # Hackathon drafts (not for repo)
 hackathon/
+
+# Agent skills (installed per-machine, not committed)
+.agents/
+.claude/skills/
+skills/
+skills-lock.json

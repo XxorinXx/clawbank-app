@@ -5,8 +5,7 @@ import { v } from "convex/values";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { getRpcUrl } from "../env";
-
-const NATIVE_SOL_MINT = "So11111111111111111111111111111111111111112";
+import { NATIVE_SOL_MINT, extractErrorMessage } from "../lib/turnkeyHelpers";
 
 interface TokenBalance {
   mint: string;
@@ -26,8 +25,7 @@ export const fetchTokenBalances = internalAction({
     try {
       solLamports = await connection.getBalance(vaultPubkey);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown RPC error";
-      throw new Error(`RPC error fetching SOL balance: ${msg}`);
+      throw new Error(`RPC error fetching SOL balance: ${extractErrorMessage(err, "Unknown RPC error")}`);
     }
 
     if (solLamports > 0) {
@@ -41,8 +39,7 @@ export const fetchTokenBalances = internalAction({
         programId: TOKEN_PROGRAM_ID,
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown RPC error";
-      throw new Error(`RPC error fetching token accounts: ${msg}`);
+      throw new Error(`RPC error fetching token accounts: ${extractErrorMessage(err, "Unknown RPC error")}`);
     }
 
     for (const { account } of tokenAccounts.value) {
