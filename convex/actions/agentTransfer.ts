@@ -13,7 +13,7 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { getRpcUrl, getSponsorKey } from "../env";
-import { signWithTurnkey, extractErrorMessage, NATIVE_NATIVE_SOL_MINT } from "../lib/turnkeyHelpers";
+import { signWithTurnkey, extractErrorMessage, NATIVE_SOL_MINT } from "../lib/turnkeyHelpers";
 import { checkSpendingLimit, solToLamports, lamportsToSol } from "../lib/spendingLimitPolicy";
 import { sha256Hex } from "../lib/connectCode";
 import type { Id } from "../_generated/dataModel";
@@ -100,7 +100,7 @@ export const agentTransfer = action({
       internal.internals.agentHelpers.getSpendingLimitsByAgent,
       { agentId },
     );
-    const solLimit = limits.find((l) => l.tokenMint === NATIVE_SOL_MINT);
+    const solLimit = limits.find((l: { tokenMint: string }) => l.tokenMint === NATIVE_SOL_MINT);
 
     let allowed = false;
     let snapshot: { limitAmount: number; spentAmount: number; periodType: string };

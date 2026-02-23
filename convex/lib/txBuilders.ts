@@ -1,6 +1,5 @@
 import * as multisig from "@sqds/multisig";
 import {
-  Keypair,
   PublicKey,
   TransactionMessage,
   VersionedTransaction,

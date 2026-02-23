@@ -11,7 +11,7 @@ interface UseSignTransactionReturn {
   statusLabel: string;
   execute: <T>(opts: {
     build: () => Promise<{ serializedTx: string; createKey?: string } & T>;
-    submit: (args: { signedTx: string; createKey?: string } & T) => Promise<void>;
+    submit: (args: { signedTx: string; createKey?: string } & T) => Promise<unknown>;
   }) => Promise<boolean>;
   reset: () => void;
 }
@@ -40,7 +40,7 @@ export function useSignTransaction(): UseSignTransactionReturn {
   const execute = useCallback(
     async <T,>(opts: {
       build: () => Promise<{ serializedTx: string; createKey?: string } & T>;
-      submit: (args: { signedTx: string; createKey?: string } & T) => Promise<void>;
+      submit: (args: { signedTx: string; createKey?: string } & T) => Promise<unknown>;
     }): Promise<boolean> => {
       setStatus("building");
       setError(null);

@@ -56,7 +56,7 @@ export function AgentsTab({ workspaceId, onAddAgent }: AgentsTabProps) {
   const [revokingAgentId, setRevokingAgentId] = useState<Id<"agents"> | null>(null)
   const tx = useSignTransaction()
 
-  const visibleAgents = agents?.filter(a => a.status === 'active') ?? []
+  const visibleAgents = agents?.filter((a: Agent) => a.status === 'active') ?? []
 
   if (agents === undefined) {
     return <ListSkeleton />

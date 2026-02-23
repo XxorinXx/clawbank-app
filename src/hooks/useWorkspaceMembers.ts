@@ -49,7 +49,7 @@ export function useWorkspaceMembers(
   const agentPubkeys = useMemo(() => {
     if (!agents) return new Set<string>();
     return new Set(
-      agents.map((a) => a.publicKey).filter(Boolean) as string[],
+      agents.map((a: { publicKey?: string }) => a.publicKey).filter(Boolean) as string[],
     );
   }, [agents]);
 

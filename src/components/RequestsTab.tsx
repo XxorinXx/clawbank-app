@@ -72,7 +72,7 @@ export function RequestsTab({ workspaceId }: RequestsTabProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      {requests.map((req) => {
+      {requests.map((req: typeof requests[number]) => {
         const isExpanded = expandedId === req._id
         const isProcessing = processingId === req._id
 

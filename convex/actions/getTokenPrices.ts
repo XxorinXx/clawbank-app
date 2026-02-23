@@ -6,7 +6,7 @@ import { v } from "convex/values";
 
 export const getTokenPrices = action({
   args: { mints: v.array(v.string()) },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Array<{ mint: string; priceUsd: number }>> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 
