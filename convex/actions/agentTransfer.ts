@@ -45,7 +45,7 @@ export const agentTransfer = action({
 
     if (
       !session ||
-      session.sessionType !== "session" ||
+      (session.sessionType !== "session" && session.sessionType !== "access") ||
       session.expiresAt <= Date.now()
     ) {
       throw new Error("Invalid or expired session");
