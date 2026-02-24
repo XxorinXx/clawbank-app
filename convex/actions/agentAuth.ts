@@ -6,13 +6,21 @@ import { internal } from "../_generated/api";
 import { v } from "convex/values";
 import { Doc } from "../_generated/dataModel";
 import { sha256Hex } from "../lib/connectCode";
+import { base64urlDecode } from "../lib/dpop";
 
 interface ExchangeResult {
-  sessionToken: string;
+  // v1 fields
+  sessionToken?: string;
+  expiresAt?: number;
+  // v2 fields
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  serverSalt?: string;
+  // shared
   agentId: string;
   workspaceId: string;
   publicKey: string | undefined;
-  expiresAt: number;
 }
 
 interface StatusResult {
@@ -29,7 +37,10 @@ interface StatusResult {
 }
 
 export const exchangeConnectCode = action({
-  args: { connectCode: v.string() },
+  args: {
+    connectCode: v.string(),
+    authPublicKey: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<ExchangeResult> => {
     const connectCode = args.connectCode.trim().toUpperCase();
 
@@ -50,31 +61,13 @@ export const exchangeConnectCode = action({
       throw new Error("Invalid or expired connect code");
     }
 
-    // Generate a new session token (returned once, never stored raw)
-    const sessionToken = crypto.randomBytes(32).toString("hex");
-    const hashedToken = sha256Hex(sessionToken);
-
-    const now = Date.now();
-    const expiresAt = now + 24 * 60 * 60 * 1000; // 24 hours
-
     // Delete the connect-code session (single-use)
     await ctx.runMutation(
       internal.internals.agentHelpers.deleteSession,
       { sessionId: session._id },
     );
 
-    // Insert the new session
-    await ctx.runMutation(
-      internal.internals.agentHelpers.insertAgentSession,
-      {
-        agentId: session.agentId,
-        tokenHash: hashedToken,
-        expiresAt,
-        sessionType: "session",
-      },
-    );
-
-    // Update agent status to connected (not yet active — active only after on-chain tx confirms)
+    // Update agent status to connected
     await ctx.runMutation(
       internal.internals.agentHelpers.updateAgentStatus,
       {
@@ -104,13 +97,92 @@ export const exchangeConnectCode = action({
       },
     );
 
-    return {
-      sessionToken,
-      agentId: session.agentId as string,
-      workspaceId: agent.workspaceId as string,
-      publicKey: agent.publicKey,
-      expiresAt,
-    };
+    if (args.authPublicKey) {
+      // ── v2 flow (DPoP) ──────────────────────────────────────────────
+      const keyBytes = base64urlDecode(args.authPublicKey);
+      if (keyBytes.length !== 32) {
+        throw new Error("Invalid public key: must be 32 bytes");
+      }
+
+      // Store auth public key on agent
+      await ctx.runMutation(
+        internal.internals.agentHelpers.updateAgentAuthPublicKey,
+        { agentId: session.agentId, authPublicKey: args.authPublicKey },
+      );
+
+      // Generate tokens
+      const accessToken = crypto.randomBytes(32).toString("hex");
+      const refreshToken = crypto.randomBytes(32).toString("hex");
+      const accessHash = sha256Hex(accessToken);
+      const refreshHash = sha256Hex(refreshToken);
+      const refreshTokenFamily = crypto.randomUUID();
+      const serverSalt = crypto.randomBytes(32).toString("hex");
+
+      const now = Date.now();
+
+      // Insert access session (5 min)
+      await ctx.runMutation(
+        internal.internals.agentHelpers.insertAgentSession,
+        {
+          agentId: session.agentId,
+          tokenHash: accessHash,
+          expiresAt: now + 5 * 60 * 1000,
+          sessionType: "access",
+          authVersion: "v2",
+          refreshTokenFamily,
+          refreshSequence: 0,
+        },
+      );
+
+      // Insert refresh session (30 days)
+      await ctx.runMutation(
+        internal.internals.agentHelpers.insertAgentSession,
+        {
+          agentId: session.agentId,
+          tokenHash: refreshHash,
+          expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+          sessionType: "refresh",
+          authVersion: "v2",
+          refreshTokenFamily,
+          refreshSequence: 0,
+        },
+      );
+
+      return {
+        accessToken,
+        refreshToken,
+        agentId: session.agentId as string,
+        workspaceId: agent.workspaceId as string,
+        publicKey: agent.publicKey,
+        expiresIn: 300,
+        serverSalt,
+      };
+    } else {
+      // ── v1 flow (bearer token) ──────────────────────────────────────
+      const sessionToken = crypto.randomBytes(32).toString("hex");
+      const hashedToken = sha256Hex(sessionToken);
+
+      const now = Date.now();
+      const expiresAt = now + 24 * 60 * 60 * 1000; // 24 hours
+
+      await ctx.runMutation(
+        internal.internals.agentHelpers.insertAgentSession,
+        {
+          agentId: session.agentId,
+          tokenHash: hashedToken,
+          expiresAt,
+          sessionType: "session",
+        },
+      );
+
+      return {
+        sessionToken,
+        agentId: session.agentId as string,
+        workspaceId: agent.workspaceId as string,
+        publicKey: agent.publicKey,
+        expiresAt,
+      };
+    }
   },
 });
 
@@ -128,7 +200,7 @@ export const agentStatus = action({
 
     if (
       !session ||
-      session.sessionType !== "session" ||
+      (session.sessionType !== "session" && session.sessionType !== "access") ||
       session.expiresAt <= Date.now()
     ) {
       throw new Error("Invalid or expired session");

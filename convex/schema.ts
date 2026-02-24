@@ -70,6 +70,7 @@ export default defineSchema({
     ),
     connectCode: v.optional(v.string()),
     connectCodeExpiresAt: v.optional(v.number()),
+    authPublicKey: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_workspace", ["workspaceId"])
@@ -80,10 +81,19 @@ export default defineSchema({
     tokenHash: v.string(),
     expiresAt: v.number(),
     lastUsedAt: v.number(),
-    sessionType: v.union(v.literal("connect_code"), v.literal("session")),
+    sessionType: v.union(
+      v.literal("connect_code"),
+      v.literal("session"),
+      v.literal("access"),
+      v.literal("refresh"),
+    ),
+    authVersion: v.optional(v.union(v.literal("v1"), v.literal("v2"))),
+    refreshTokenFamily: v.optional(v.string()),
+    refreshSequence: v.optional(v.number()),
   })
     .index("by_tokenHash", ["tokenHash"])
-    .index("by_agentId", ["agentId"]),
+    .index("by_agentId", ["agentId"])
+    .index("by_refreshFamily", ["refreshTokenFamily"]),
 
   spending_limits: defineTable({
     workspaceId: v.id("workspaces"),
@@ -145,4 +155,18 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_agent", ["agentId"])
     .index("by_txSignature", ["txSignature"]),
+
+  dpop_nonces: defineTable({
+    jti: v.string(),
+    agentId: v.id("agents"),
+    expiresAt: v.number(),
+  })
+    .index("by_jti", ["jti"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  agent_rate_limits: defineTable({
+    key: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_key", ["key"]),
 });

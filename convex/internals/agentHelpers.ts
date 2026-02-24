@@ -32,7 +32,15 @@ export const insertAgentSession = internalMutation({
     agentId: v.id("agents"),
     tokenHash: v.string(),
     expiresAt: v.number(),
-    sessionType: v.union(v.literal("connect_code"), v.literal("session")),
+    sessionType: v.union(
+      v.literal("connect_code"),
+      v.literal("session"),
+      v.literal("access"),
+      v.literal("refresh"),
+    ),
+    authVersion: v.optional(v.union(v.literal("v1"), v.literal("v2"))),
+    refreshTokenFamily: v.optional(v.string()),
+    refreshSequence: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<void> => {
     await ctx.db.insert("agent_sessions", {
@@ -41,6 +49,15 @@ export const insertAgentSession = internalMutation({
       expiresAt: args.expiresAt,
       lastUsedAt: Date.now(),
       sessionType: args.sessionType,
+      ...(args.authVersion !== undefined && {
+        authVersion: args.authVersion,
+      }),
+      ...(args.refreshTokenFamily !== undefined && {
+        refreshTokenFamily: args.refreshTokenFamily,
+      }),
+      ...(args.refreshSequence !== undefined && {
+        refreshSequence: args.refreshSequence,
+      }),
     });
   },
 });
@@ -139,6 +156,18 @@ export const updateAgentConnectCode = internalMutation({
     await ctx.db.patch(args.agentId, {
       connectCode: args.connectCode,
       connectCodeExpiresAt: args.connectCodeExpiresAt,
+    });
+  },
+});
+
+export const updateAgentAuthPublicKey = internalMutation({
+  args: {
+    agentId: v.id("agents"),
+    authPublicKey: v.string(),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    await ctx.db.patch(args.agentId, {
+      authPublicKey: args.authPublicKey,
     });
   },
 });
