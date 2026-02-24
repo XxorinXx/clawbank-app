@@ -382,13 +382,20 @@ async function createProposal(
       rentPayer: p.sponsorKeypair.publicKey,
     });
 
+    // Activate the proposal so members can vote (Draft -> Active)
+    const proposalActivateIx = multisig.instructions.proposalActivate({
+      multisigPda: p.multisigPda,
+      transactionIndex: nextTransactionIndex,
+      member: p.agentPubkey,
+    });
+
     const { blockhash, lastValidBlockHeight } =
       await p.connection.getLatestBlockhash("confirmed");
 
     const messageV0 = new TransactionMessage({
       payerKey: p.sponsorKeypair.publicKey,
       recentBlockhash: blockhash,
-      instructions: [vaultTxCreateIx, proposalCreateIx],
+      instructions: [vaultTxCreateIx, proposalCreateIx, proposalActivateIx],
     }).compileToV0Message();
 
     const tx = new VersionedTransaction(messageV0);

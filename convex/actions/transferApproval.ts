@@ -200,7 +200,7 @@ export const denyTransferRequest = action({
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
 
-    const cancelIx = multisig.instructions.proposalCancel({
+    const rejectIx = multisig.instructions.proposalReject({
       multisigPda,
       transactionIndex: BigInt(request.proposalIndex),
       member: userWallet,
@@ -211,7 +211,7 @@ export const denyTransferRequest = action({
     const messageV0 = new TransactionMessage({
       payerKey: sponsorKeypair.publicKey,
       recentBlockhash: blockhash,
-      instructions: [cancelIx],
+      instructions: [rejectIx],
     }).compileToV0Message();
 
     const tx = new VersionedTransaction(messageV0);
