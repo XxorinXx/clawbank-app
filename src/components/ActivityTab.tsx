@@ -24,7 +24,7 @@ import {
   formatRelativeTime,
   formatFullDateTime,
   formatUsd,
-  lamportsToSol,
+  formatSol,
 } from "~/utils/format";
 
 interface ActivityTabProps {
@@ -256,22 +256,23 @@ export function ActivityTab({ workspaceId }: ActivityTabProps) {
                 </div>
               </div>
 
-              {/* Amount (right side, for transactions) */}
+              {/* Amount (right side, for transactions) — USD primary */}
               {entry.amount != null && entry.amount > 0 && (
                 <div className="shrink-0 text-right">
-                  {typeof entry.metadata?.usdValue === "number" && (
+                  {typeof entry.metadata?.usdValue === "number" ? (
+                    <>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {formatUsd(entry.metadata.usdValue)}
+                      </span>
+                      <span className="block text-[11px] text-gray-400">
+                        {formatSol(entry.amount)} SOL
+                      </span>
+                    </>
+                  ) : (
                     <span className="text-sm font-semibold text-gray-900">
-                      {formatUsd(entry.metadata.usdValue)}
+                      {formatSol(entry.amount)} SOL
                     </span>
                   )}
-                  <span className={cn(
-                    "block text-[11px]",
-                    typeof entry.metadata?.usdValue === "number"
-                      ? "text-gray-400"
-                      : "text-sm font-semibold text-gray-900",
-                  )}>
-                    {lamportsToSol(entry.amount)} SOL
-                  </span>
                 </div>
               )}
             </div>

@@ -18,7 +18,7 @@ import {
   formatRelativeTime,
   formatFullDateTime,
   formatUsd,
-  lamportsToSol,
+  formatSol,
   truncateAddress,
 } from "~/utils/format";
 import {
@@ -244,25 +244,27 @@ export function ActivityDetailModal({
                 </div>
               )}
 
-              {/* Amount (for transactions) */}
+              {/* Amount (for transactions) — USD primary */}
               {activity.amount != null && activity.amount > 0 && (
                 <div className="mb-4">
                   <span className="mb-1 block text-xs font-medium text-gray-400">
                     Amount
                   </span>
                   <div className="flex items-baseline gap-2">
-                    {typeof activity.metadata?.usdValue === "number" && (
+                    {typeof activity.metadata?.usdValue === "number" ? (
+                      <>
+                        <span className="text-lg font-semibold text-gray-900">
+                          {formatUsd(activity.metadata.usdValue)}
+                        </span>
+                        <span className="text-sm text-gray-400">
+                          {formatSol(activity.amount)} SOL
+                        </span>
+                      </>
+                    ) : (
                       <span className="text-lg font-semibold text-gray-900">
-                        {formatUsd(activity.metadata.usdValue)}
+                        {formatSol(activity.amount)} SOL
                       </span>
                     )}
-                    <span className={cn(
-                      typeof activity.metadata?.usdValue === "number"
-                        ? "text-sm text-gray-400"
-                        : "text-lg font-semibold text-gray-900",
-                    )}>
-                      {lamportsToSol(activity.amount)} SOL
-                    </span>
                   </div>
                 </div>
               )}

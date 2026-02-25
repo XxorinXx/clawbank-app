@@ -1,23 +1,19 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "motion/react";
 import { Activity, Bot, Inbox, Plus, Users, Wallet } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { BalanceHeader } from "~/components/BalanceHeader";
 import { TokenListModal } from "~/components/TokenListModal";
 import { DrawerTabs, type TabItem } from "~/components/DrawerTabs";
 import { TabPlaceholder } from "~/components/TabPlaceholder";
+import { ActivityTab } from "~/components/ActivityTab";
 import { MembersTab } from "~/components/MembersTab";
 import { AgentsTab } from "~/components/AgentsTab";
 import { RequestsTab } from "~/components/RequestsTab";
 import { AddAgentModal } from "~/components/AddAgentModal";
 import { useWorkspaceBalance } from "~/hooks/useWorkspaceBalance";
 import { Id } from "../../convex/_generated/dataModel";
-
-const DRAWER_TABS: TabItem[] = [
-  { key: "requests", label: "Requests", icon: <Inbox size={14} /> },
-  { key: "agents", label: "Agents", icon: <Bot size={14} /> },
-  { key: "humans", label: "Humans", icon: <Users size={14} /> },
-  { key: "activity", label: "Activity", icon: <Activity size={14} /> },
-];
 
 function BalanceHeaderSkeleton() {
   return (
@@ -44,9 +40,20 @@ interface WorkspaceDrawerProps {
 
 export function WorkspaceDrawer({ workspaceId, onClose }: WorkspaceDrawerProps) {
   const { data: balanceData, isLoading: balanceLoading } = useWorkspaceBalance(workspaceId);
+  const pendingCount = useQuery(api.queries.transferRequests.pendingCount, { workspaceId });
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("requests");
   const [isAddAgentOpen, setIsAddAgentOpen] = useState(false);
+
+  const drawerTabs: TabItem[] = useMemo(
+    () => [
+      { key: "requests", label: "Requests", icon: <Inbox size={14} />, badge: pendingCount ?? 0 },
+      { key: "agents", label: "Agents", icon: <Bot size={14} /> },
+      { key: "humans", label: "Humans", icon: <Users size={14} /> },
+      { key: "activity", label: "Activity", icon: <Activity size={14} /> },
+    ],
+    [pendingCount],
+  );
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -55,7 +62,7 @@ export function WorkspaceDrawer({ workspaceId, onClose }: WorkspaceDrawerProps) 
       case "requests":
         return <RequestsTab workspaceId={workspaceId} />;
       case "activity":
-        return <TabPlaceholder icon={<Activity size={28} className="text-gray-400" />} label="Activity" />;
+        return <ActivityTab workspaceId={workspaceId} />;
       case "agents":
         return <AgentsTab workspaceId={workspaceId} onAddAgent={() => setIsAddAgentOpen(true)} />;
       case "balances":
@@ -113,7 +120,7 @@ export function WorkspaceDrawer({ workspaceId, onClose }: WorkspaceDrawerProps) 
       </div>
 
       {/* Tabs */}
-      <DrawerTabs items={DRAWER_TABS} activeKey={activeTab} onChange={setActiveTab}>
+      <DrawerTabs items={drawerTabs} activeKey={activeTab} onChange={setActiveTab}>
         {renderTabContent()}
       </DrawerTabs>
 
