@@ -54,3 +54,17 @@ export const REQUEST_STATUS_LABELS: Record<string, string> = {
   denied: "Denied",
   failed: "Failed",
 };
+
+export const ACTIVITY_STATUS_STYLES: Record<string, string> = {
+  success: "bg-green-50 text-green-700",
+  failed: "bg-red-50 text-red-700",
+  denied: "bg-red-50 text-red-700",
+  pending: "bg-amber-50 text-amber-700",
+};
+
+export const ACTIVITY_STATUS_LABELS: Record<string, string> = {
+  success: "Success",
+  failed: "Failed",
+  denied: "Denied",
+  pending: "Pending",
+};

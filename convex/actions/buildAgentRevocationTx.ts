@@ -137,6 +137,9 @@ export const submitAgentRevocationTx = action({
         await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
           workspaceId: agent.workspaceId,
           agentId: args.agentId,
+          actorType: "human",
+          actorLabel: identity.email ?? "Unknown",
+          category: "agent_lifecycle",
           action: "agent_revoked",
         });
       }
@@ -185,7 +188,10 @@ export const submitAgentRevocationTx = action({
       await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
         workspaceId: agent.workspaceId,
         agentId: args.agentId,
-        action: "agent_revoked_onchain",
+        actorType: "human",
+        actorLabel: identity.email ?? "Unknown",
+        category: "agent_lifecycle",
+        action: "agent_revoked",
         txSignature: signature,
       });
     }

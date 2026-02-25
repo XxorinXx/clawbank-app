@@ -106,7 +106,7 @@ async function authenticateRequest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ctx: any,
   request: Request,
-  actionPath: string,
+  _actionPath: string,
 ): Promise<{
   agentId: Id<"agents">;
   workspaceId: Id<"workspaces">;
@@ -160,7 +160,7 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const auth = await authenticateRequest(ctx, request, "/agent/transfer");
+      await authenticateRequest(ctx, request, "/agent/transfer");
 
       const body = await request.json();
       const { recipient, amountSol, shortNote, description } = body;

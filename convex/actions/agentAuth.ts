@@ -93,7 +93,10 @@ export const exchangeConnectCode = action({
       {
         workspaceId: agent.workspaceId,
         agentId: session.agentId,
-        action: "session_created",
+        actorType: "agent",
+        actorLabel: agent.name,
+        category: "agent_lifecycle",
+        action: "agent_connected",
       },
     );
 

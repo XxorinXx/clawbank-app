@@ -178,7 +178,10 @@ export const submitSpendingLimitUpdateTx = action({
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: args.workspaceId,
       agentId: args.agentId,
-      action: "limit_updated_onchain",
+      actorType: "human",
+      actorLabel: identity.email ?? "Unknown",
+      category: "config",
+      action: "spending_limit_updated",
       txSignature: signature,
     });
 

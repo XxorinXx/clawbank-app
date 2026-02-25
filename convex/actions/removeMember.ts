@@ -159,6 +159,17 @@ export const submitRemoveMemberTx = action({
       },
     );
 
+    // Log member removal activity
+    await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
+      workspaceId: args.workspaceId,
+      actorType: "human",
+      actorLabel: identity.email ?? "Unknown",
+      category: "config",
+      action: "member_removed",
+      txSignature: signature,
+      metadata: { memberPublicKey: args.memberPublicKey },
+    });
+
     return { txSignature: signature };
   },
 });

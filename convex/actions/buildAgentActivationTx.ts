@@ -184,7 +184,10 @@ export const submitAgentActivationTx = action({
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: agent.workspaceId,
       agentId: args.agentId,
-      action: "agent_activated_onchain",
+      actorType: "human",
+      actorLabel: identity.email ?? "Unknown",
+      category: "agent_lifecycle",
+      action: "agent_activated",
       txSignature: signature,
     });
 

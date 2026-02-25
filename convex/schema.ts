@@ -144,7 +144,16 @@ export default defineSchema({
 
   activity_log: defineTable({
     workspaceId: v.id("workspaces"),
-    agentId: v.id("agents"),
+    agentId: v.optional(v.id("agents")),
+    actorType: v.optional(v.union(v.literal("agent"), v.literal("human"))),
+    actorLabel: v.optional(v.string()),
+    category: v.optional(
+      v.union(
+        v.literal("transaction"),
+        v.literal("config"),
+        v.literal("agent_lifecycle"),
+      ),
+    ),
     action: v.string(),
     txSignature: v.optional(v.string()),
     amount: v.optional(v.number()),

@@ -2,6 +2,7 @@
 
 DONE: 001A
 DONE: 001B
+DONE: CB-ACTIVITY-001
 
 ## 001C QA Notes
 
@@ -255,3 +256,36 @@ DONE: 0021
 - `docs/DECISIONS.md` — Architecture decisions for CB-AGENT-SPEND-001
 
 DONE: CB-AGENT-SPEND-001
+
+## CB-ACTIVITY-001 QA Notes
+
+### Checks
+- **Lint**: PASS (0 new errors)
+- **Typecheck**: PASS (0 new errors)
+- **Build**: PASS
+- **Tests**: PASS (66 total: 14 new format utility tests)
+
+### Files changed
+
+**Schema + Backend:**
+- `convex/schema.ts` — `activity_log` evolved: `agentId` optional, added optional `actorType`, `actorLabel`, `category`
+- `convex/internals/agentHelpers.ts` — `logActivity` mutation updated with new fields
+- `convex/queries/activityLog.ts` — NEW: paginated, filtered, auth-gated activity query
+- `convex/actions/agentTransfer.ts` — logActivity calls updated (4 sites)
+- `convex/actions/transferApproval.ts` — logActivity calls updated (2 sites)
+- `convex/actions/buildAgentActivationTx.ts` — logActivity call updated
+- `convex/actions/buildAgentRevocationTx.ts` — logActivity calls updated (2 sites)
+- `convex/actions/provisionAgent.ts` — logActivity calls updated (2 sites)
+- `convex/actions/agentAuth.ts` — logActivity call updated
+- `convex/actions/updateSpendingLimitOnchain.ts` — logActivity call updated
+- `convex/mutations/removeMember.ts` — NEW logActivity call for member_removed
+
+**Frontend:**
+- `src/components/ActivityTab.tsx` — NEW: activity feed with filter pills, cards, infinite scroll
+- `src/components/ActivityDetailModal.tsx` — NEW: spring-animated liquid glass modal with full details
+- `src/components/WorkspaceDrawer.tsx` — Wired ActivityTab replacing placeholder
+- `src/utils/format.ts` — Added formatRelativeTime, formatFullDateTime, activityTitle, activityDescription
+- `src/utils/format.test.ts` — 14 unit tests for new format utilities
+- `src/components/ui/StatusBadge.tsx` — Added ACTIVITY_STATUS_STYLES, ACTIVITY_STATUS_LABELS
+
+DONE: CB-ACTIVITY-001
