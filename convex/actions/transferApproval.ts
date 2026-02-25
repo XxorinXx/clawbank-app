@@ -12,7 +12,8 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { getSponsorKey, getRpcUrl } from "../env";
-import { extractErrorMessage } from "../lib/turnkeyHelpers";
+import { extractErrorMessage, NATIVE_SOL_MINT } from "../lib/turnkeyHelpers";
+import { lamportsToSol } from "../lib/spendingLimitPolicy";
 
 // ---------------------------------------------------------------------------
 // buildApproveTransferRequest
@@ -139,18 +140,30 @@ export const submitTransferApproval = action({
       },
     );
 
-    // Load request to log activity
-    const request = await ctx.runQuery(
-      internal.internals.transferHelpers.getTransferRequest,
-      { requestId: args.requestId },
-    );
+    // Load request + SOL price to log activity
+    const [request, approvalSolPrices] = await Promise.all([
+      ctx.runQuery(
+        internal.internals.transferHelpers.getTransferRequest,
+        { requestId: args.requestId },
+      ),
+      ctx.runAction(
+        internal.actions.fetchTokenPrices.fetchTokenPrices,
+        { mints: [NATIVE_SOL_MINT] },
+      ),
+    ]);
     if (request) {
+      const solPrice = approvalSolPrices[0]?.priceUsd ?? 0;
+      const usdValue = lamportsToSol(request.amountLamports) * solPrice;
       await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
         workspaceId: request.workspaceId,
         agentId: request.agentId,
+        actorType: "human",
+        actorLabel: identity.email ?? "Unknown",
+        category: "transaction",
         action: "transfer_approved",
         txSignature: signature,
         amount: request.amountLamports,
+        metadata: { recipient: request.recipient, usdValue },
       });
     }
 
@@ -274,18 +287,30 @@ export const submitTransferDenial = action({
       },
     );
 
-    // Load request to log activity
-    const request = await ctx.runQuery(
-      internal.internals.transferHelpers.getTransferRequest,
-      { requestId: args.requestId },
-    );
-    if (request) {
+    // Load request + SOL price to log activity
+    const [requestForDeny, denySolPrices] = await Promise.all([
+      ctx.runQuery(
+        internal.internals.transferHelpers.getTransferRequest,
+        { requestId: args.requestId },
+      ),
+      ctx.runAction(
+        internal.actions.fetchTokenPrices.fetchTokenPrices,
+        { mints: [NATIVE_SOL_MINT] },
+      ),
+    ]);
+    if (requestForDeny) {
+      const solPrice = denySolPrices[0]?.priceUsd ?? 0;
+      const usdValue = lamportsToSol(requestForDeny.amountLamports) * solPrice;
       await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
-        workspaceId: request.workspaceId,
-        agentId: request.agentId,
+        workspaceId: requestForDeny.workspaceId,
+        agentId: requestForDeny.agentId,
+        actorType: "human",
+        actorLabel: identity.email ?? "Unknown",
+        category: "transaction",
         action: "transfer_denied",
         txSignature: signature,
-        amount: request.amountLamports,
+        amount: requestForDeny.amountLamports,
+        metadata: { recipient: requestForDeny.recipient, usdValue },
       });
     }
 
