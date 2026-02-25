@@ -266,14 +266,30 @@ async function executeUnderLimit(
       },
     );
 
-    // Log activity
+    // Log activity — resolve agent name + SOL price
+    const [agentForLog, solPrices] = await Promise.all([
+      ctx.runQuery(
+        internal.internals.agentHelpers.getAgentById,
+        { agentId: p.agentId },
+      ),
+      ctx.runAction(
+        internal.actions.fetchTokenPrices.fetchTokenPrices,
+        { mints: [NATIVE_SOL_MINT] },
+      ),
+    ]);
+    const solPrice = solPrices[0]?.priceUsd ?? 0;
+    const usdValue = lamportsToSol(p.amountLamports) * solPrice;
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: p.workspaceId,
       agentId: p.agentId,
+      actorType: "agent",
+      actorLabel: agentForLog?.name ?? "Unknown Agent",
+      category: "transaction",
       action: "transfer_executed",
       txSignature: signature,
       amount: p.amountLamports,
       tokenMint: NATIVE_SOL_MINT,
+      metadata: { recipient: p.recipientPubkey.toBase58(), usdValue },
     });
 
     return {
@@ -293,9 +309,16 @@ async function executeUnderLimit(
       },
     );
 
+    const agentForFailLog = await ctx.runQuery(
+      internal.internals.agentHelpers.getAgentById,
+      { agentId: p.agentId },
+    );
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: p.workspaceId,
       agentId: p.agentId,
+      actorType: "agent",
+      actorLabel: agentForFailLog?.name ?? "Unknown Agent",
+      category: "transaction",
       action: "transfer_failed",
       metadata: { error: errorMsg },
     });
@@ -375,18 +398,13 @@ async function createProposal(
       }),
     });
 
+    // isDraft: false (default) creates the proposal directly as Active,
+    // so members can vote immediately — no separate proposalActivate needed.
     const proposalCreateIx = multisig.instructions.proposalCreate({
       multisigPda: p.multisigPda,
       transactionIndex: nextTransactionIndex,
       creator: p.agentPubkey,
       rentPayer: p.sponsorKeypair.publicKey,
-    });
-
-    // Activate the proposal so members can vote (Draft -> Active)
-    const proposalActivateIx = multisig.instructions.proposalActivate({
-      multisigPda: p.multisigPda,
-      transactionIndex: nextTransactionIndex,
-      member: p.agentPubkey,
     });
 
     const { blockhash, lastValidBlockHeight } =
@@ -395,7 +413,7 @@ async function createProposal(
     const messageV0 = new TransactionMessage({
       payerKey: p.sponsorKeypair.publicKey,
       recentBlockhash: blockhash,
-      instructions: [vaultTxCreateIx, proposalCreateIx, proposalActivateIx],
+      instructions: [vaultTxCreateIx, proposalCreateIx],
     }).compileToV0Message();
 
     const tx = new VersionedTransaction(messageV0);
@@ -433,17 +451,34 @@ async function createProposal(
       },
     );
 
-    // Log activity
+    // Log activity — resolve agent name + SOL price
+    const [agentForProposalLog, proposalSolPrices] = await Promise.all([
+      ctx.runQuery(
+        internal.internals.agentHelpers.getAgentById,
+        { agentId: p.agentId },
+      ),
+      ctx.runAction(
+        internal.actions.fetchTokenPrices.fetchTokenPrices,
+        { mints: [NATIVE_SOL_MINT] },
+      ),
+    ]);
+    const proposalSolPrice = proposalSolPrices[0]?.priceUsd ?? 0;
+    const proposalUsdValue = lamportsToSol(p.amountLamports) * proposalSolPrice;
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: p.workspaceId,
       agentId: p.agentId,
+      actorType: "agent",
+      actorLabel: agentForProposalLog?.name ?? "Unknown Agent",
+      category: "transaction",
       action: "transfer_proposal_created",
       txSignature: signature,
       amount: p.amountLamports,
       tokenMint: NATIVE_SOL_MINT,
       metadata: {
+        recipient: p.recipientPubkey.toBase58(),
         proposalAddress: proposalPda.toBase58(),
         proposalIndex: Number(nextTransactionIndex),
+        usdValue: proposalUsdValue,
       },
     });
 
@@ -464,9 +499,16 @@ async function createProposal(
       },
     );
 
+    const agentForProposalFailLog = await ctx.runQuery(
+      internal.internals.agentHelpers.getAgentById,
+      { agentId: p.agentId },
+    );
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: p.workspaceId,
       agentId: p.agentId,
+      actorType: "agent",
+      actorLabel: agentForProposalFailLog?.name ?? "Unknown Agent",
+      category: "transaction",
       action: "transfer_proposal_failed",
       metadata: { error: errorMsg },
     });
