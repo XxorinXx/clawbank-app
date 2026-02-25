@@ -1,115 +1,201 @@
-# STORY: CB-AGENT-SPEND-001 Agent Spend + Human Approval Transfer Flow (SOL transfer demo)
+# STORY: CB-REQ-001 — Redesign Requests Tab (Pending Only + Detail Modal)
 
 ## Inputs (the only files agents should read)
 
-- OVERVIEW.md
-- STORY_TAMPLATE.md
-- docs/PRD.md
-- docs/ACCEPTANCE.md
-- docs/ARCH.md (if exists)
-- docs/PROGRESS.md
-- convex/ (all Convex schema + functions)
-- src/ (frontend app)
-- src/routes (TanStack Router / Start routes)
-- src/components (shadcn UI components)
-- src/lib/solana (or wherever Solana helpers live)
-- src/lib/squads (or wherever Squads helpers live)
+- `AGENTS/CONVENTIONS.md`
+- `docs/PRD.md`
+- `docs/PROGRESS.md`
+- `convex/schema.ts`
+- `convex/queries/transferRequests.ts`
+- `convex/actions/transferApproval.ts`
+- `src/components/RequestsTab.tsx`
+- `src/components/WorkspaceDrawer.tsx`
+- `src/components/DrawerTabs.tsx`
+- `src/components/ActivityDetailModal.tsx` (reference for modal pattern)
+- `src/utils/format.ts`
+
+## Goal
+
+Redesign the Requests tab to show **only actionable requests** (`pending_approval` + `pending_execution`) in compact rows with always-visible Approve/Reject buttons. A "See More" button opens a rich detail modal with full context (spending limits, on-chain details, dates). Completed/denied/failed requests live exclusively in the Activity tab — clean separation: Requests = actionable, Activity = history.
 
 ## Scope (must)
 
-### Goal
+### 1. Backend: Filter query to pending-only
 
-Implement two end-to-end flows for a SOL transfer to:
-`4MnEbZD5fvvGMHgVN77vZCYixR7zrwQZiydXLDHnMnVB`
+File: `convex/queries/transferRequests.ts`
 
-1. **Agent spend within limit (auto-execute):**
-   - Agent creates a transfer request with:
-     - short note (very short)
-     - description (longer)
-     - “what this pays for” + “why”
-   - System checks agent spending limit.
-   - If under limit: backend signs and submits tx (Turnkey signer) and stores status + tx signature.
-   - Request appears in UI (Requests tab) as “Executed” with details and tx link.
+- Add a new query `listPending` (or modify `list`) that filters to only `pending_approval` and `pending_execution` statuses
+- Also add a `pendingCount` query that returns just the count (for the tab badge)
+- Keep the existing `list` query intact for backward compatibility
+- Enrich with agent names + current spending limit data (live, not snapshot)
 
-2. **Agent spend requiring human approval (proposal):**
-   - Same transfer request fields (short note + description + metadata).
-   - If over limit (or forced approval mode): create an on-chain **Squads proposal** for the transfer.
-   - Store proposal address/ID in Convex and show request in UI as “Pending Approval”.
-   - Human can **Approve** or **Deny** from the UI.
-   - Approve => approve/execute proposal on-chain; update request status to Approved/Executed.
-   - Deny => reject proposal on-chain (or mark as denied + close); update request status to Denied.
+### 2. Compact Request Row
 
-### UX surface
+File: `src/components/RequestsTab.tsx` (redesign)
 
-- Requests tab is the operating surface for these requests (list view).
-- Each request card shows:
-  - Status badge (Pending / Executed / Approved / Denied / Failed)
-  - Recipient (short)
-  - Amount (SOL)
-  - **Short note**
-  - Created date
-  - Expand/collapse to reveal:
-    - Full description
-    - Initiator (agent id)
-    - Spending limit snapshot used for decision
-    - Proposal address (if any)
-    - Tx signature (if any)
-    - Error message (if failed)
+Each row shows:
+- **Title**: e.g. "Transfer 2.5 SOL" (amount + action)
+- **Agent name**: who is requesting
+- **Short description**: truncated ~80 chars from `shortNote`
+- **Relative timestamp**: "2 min ago"
+- **Approve button** (green, always visible)
+- **Reject button** (red, always visible)
+- **See More button** (subtle, opens detail modal)
+
+Remove the old expand/collapse pattern entirely. The row is flat and compact.
+
+Status filtering: only show `pending_approval` and `pending_execution` requests.
+
+### 3. Request Detail Modal
+
+File: `src/components/RequestDetailModal.tsx` (new)
+
+Follow the existing `ActivityDetailModal` pattern (spring animation + liquid glass styling):
+
+**Always visible:**
+- Header: title + status badge
+- Agent name + avatar icon
+- Amount (SOL primary, USD if available)
+- Recipient address (truncated + copy)
+- Full description / agent justification
+- Created date (full + relative)
+- Approve + Reject buttons (same behavior as row)
+
+**Spending Context section:**
+- Agent's current spending limit (live from DB)
+- Amount spent so far this period
+- Remaining budget
+- Period type (daily/weekly/monthly)
+- Visual: progress bar or fraction display
+
+**Collapsible "On-chain Details" (hidden by default):**
+- Proposal address (truncated + copy + Solscan link)
+- Tx signature if exists (truncated + copy + Solscan link)
+- Proposal index
+- Error message (if failed, red background)
+
+**Reject confirmation:**
+- Clicking Reject in modal shows a confirmation dialog ("Are you sure you want to reject this request?") before triggering wallet signing
+- Approve goes straight to wallet (wallet prompt IS the confirmation)
+
+### 4. Tab Badge (pending count)
+
+File: `src/components/DrawerTabs.tsx` + `src/components/WorkspaceDrawer.tsx`
+
+- Add support for a `badge` (number or ReactNode) on `TabItem`
+- Show amber dot + count on the "Requests" tab when there are pending requests
+- Badge disappears when count is 0
+- Use the `pendingCount` query in `WorkspaceDrawer` to feed the badge
+
+### 5. Empty State
+
+When no pending requests exist:
+- Icon: Inbox (existing)
+- Title: "All clear"
+- Description: "No pending requests — you're all caught up"
+
+### 6. Loading State
+
+- Use existing `<ListSkeleton />` pattern while query loads
 
 ## Out of scope (must not)
 
-- Destination allowlists (explicitly deferred in overview)
-- Swaps, token transfers, SPL tokens (SOL only)
-- Deep on-chain indexing beyond what’s needed for this flow
-- Advanced policies beyond “spending limit gate + approval”
-- Multi-workflow batching or recurring payments
+- Push notifications / email alerts for new requests
+- Batch approve/reject multiple requests
+- Activity tab changes (already works)
+- Dark mode
+- Request history in Requests tab (all history is in Activity)
 
 ## UX + Acceptance (objective)
 
-### Under-limit path
+### Only pending requests shown
+- Given a vault with pending and completed transfer requests
+- When a user opens the Requests tab
+- Then only `pending_approval` and `pending_execution` requests are visible
+- And completed/denied/failed requests do NOT appear
 
-- Given a workspace with an agent and a spending limit that covers the transfer amount
-- When the agent submits a SOL transfer request with short note + description
-- Then the tx is signed and sent automatically
-- And the request is visible in Requests as Executed with tx signature
+### Compact row shows correct info
+- Each row shows: title (amount), agent name, short description, timestamp
+- Approve (green) and Reject (red) buttons are always visible on every row
+- "See More" button is visible on every row
 
-### Approval-required path
+### Tab badge shows pending count
+- Given 3 pending requests
+- Then the Requests tab label shows an amber badge with "3"
+- When all are approved/denied, badge disappears
 
-- Given a workspace with an agent and a spending limit that does NOT cover the transfer amount (or approval mode enabled)
-- When the agent submits the same SOL transfer request
-- Then an on-chain Squads proposal is created
-- And the request is visible in Requests as Pending Approval
-- When a human clicks Approve
-- Then the proposal is approved/executed on-chain and request becomes Approved/Executed
-- When a human clicks Deny
-- Then the request becomes Denied and cannot be executed
+### Detail modal opens with animation
+- When the user clicks "See More" on a request row
+- Then a modal opens with spring animation and liquid glass blur
+- The modal shows full details: description, agent, amount, recipient, dates, spending context
+- Approve and Reject buttons work from inside the modal
+- "On-chain Details" section is collapsed by default
+- Pressing Escape or clicking backdrop closes the modal
 
-### Error cases
+### Spending context is accurate
+- The modal shows the agent's CURRENT spending limit (live query, not just snapshot)
+- Shows spent amount and remaining budget for the current period
 
-- If Turnkey signing fails: request becomes Failed with error details
-- If RPC fails / blockhash expired: request becomes Failed and UI shows “retry” only if safe
-- If proposal creation fails: request becomes Failed
-- If human approval fails due to missing permissions: show error and keep request Pending
-- If request data is missing short note or description: validation error, no chain action
+### Reject confirmation
+- Clicking Reject (in row or modal) shows "Are you sure?" confirmation
+- Clicking Approve goes directly to wallet signing
 
-## Skills enabled (required)
+### Approve flow works
+- Clicking Approve triggers wallet signing
+- On success: toast "Transfer approved", request disappears from list, count decrements
+- On failure: toast with error message
 
-- Solana vuln scan (trailofbits)
-- Solana dev
+### Deny flow works
+- Clicking Reject shows confirmation dialog
+- On confirm: triggers wallet signing
+- On success: toast "Transfer denied", request disappears from list
+- On cancel: nothing happens
+
+### Empty state
+- Given a vault with no pending requests
+- When the user opens the Requests tab
+- Then they see "All clear — No pending requests"
+
+### Real-time updates
+- New pending requests appear in the list without refresh (Convex reactive queries)
+- Approved/denied requests disappear from the list in real-time
+
+## Design language
+
+- **Enterprise, not crypto** — "Transfer Request" not "SOL Transaction Proposal"
+- **Normie-first** — amounts in SOL with USD context, no raw hashes in primary view
+- **Clean density** — compact rows with generous whitespace, muted secondary text
+- **Liquid glass modal** — translucent surface, backdrop blur, spring physics (match ActivityDetailModal)
+- **Always-actionable** — approve/reject visible without extra clicks
+
+## Skills enabled
+
 - Convex
 - Vercel React best practices
-- TanStack Query
-- TanStack Start best practices
-- TanStack Router
-- Squads
-- Tailwind v4 + shadcn
+- Tailwind + shadcn/ui
+- Motion (Framer Motion)
 - UI/UX Pro Max
 
-## Done Conditions (hard gates)
+## Done conditions (hard gates)
 
+- [ ] `convex/queries/transferRequests.ts` — `listPending` query filters to pending statuses only
+- [ ] `convex/queries/transferRequests.ts` — `pendingCount` query returns count for badge
+- [ ] `RequestsTab` redesigned with compact rows (title, agent, description, timestamp)
+- [ ] Approve + Reject buttons always visible on every row
+- [ ] "See More" opens `RequestDetailModal`
+- [ ] `RequestDetailModal` with spring animation + liquid glass styling
+- [ ] Modal shows full details: description, agent, amount, recipient, dates
+- [ ] Modal shows spending context: current limit, spent, remaining, period
+- [ ] Collapsible "On-chain Details" with proposal/tx sig + Solscan links
+- [ ] Reject confirmation dialog before wallet signing
+- [ ] Tab badge shows pending count (amber dot + number)
+- [ ] Badge disappears when count is 0
+- [ ] Empty state: "All clear — No pending requests"
+- [ ] Loading skeleton while fetching
+- [ ] Real-time: requests appear/disappear without refresh
 - [ ] lint passes
 - [ ] typecheck passes
 - [ ] build passes
-- [ ] tests pass (at least: unit tests for limit decision + request status transitions)
-- [ ] request flow works in dev against a configured RPC
-- [ ] completion marker written: DONE: CB-AGENT-SPEND-001 in docs/PROGRESS.md
+- [ ] unit tests pass
+- [ ] Playwright e2e test: open Requests tab, verify rows render, open modal, close modal
+- [ ] Completion marker: `DONE: CB-REQ-001` in `docs/PROGRESS.md`
