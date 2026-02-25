@@ -47,6 +47,7 @@ Playwright in `e2e/`. Auth state saved in `e2e/.auth/`.
 Config: screenshots `on`, video `on`, trace `on` — evidence auto-captured.
 Results in `e2e/test-results/`, report in `e2e/playwright-report/`.
 **Every story must have a Playwright test** based on the story's acceptance criteria.
+**Before running Playwright tests**, ensure `npx convex dev` is running in the background — the frontend requires the Convex backend to function.
 
 ## PR Requirements
 
