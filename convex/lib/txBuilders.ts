@@ -35,8 +35,8 @@ export function buildCreateWorkspaceTxCore(
     })),
   ];
 
-  const tx = smartAccount.transactions.createSmartAccount({
-    blockhash: params.blockhash,
+  // Use instruction (not transaction) so we control the fee payer (sponsor)
+  const createIx = smartAccount.instructions.createSmartAccount({
     treasury: params.treasury,
     creator: params.creatorWallet,
     settings: params.settingsPda,
@@ -46,6 +46,14 @@ export function buildCreateWorkspaceTxCore(
     timeLock: 0,
     rentCollector: null,
   });
+
+  const messageV0 = new TransactionMessage({
+    payerKey: params.sponsorPublicKey,
+    recentBlockhash: params.blockhash,
+    instructions: [createIx],
+  }).compileToV0Message();
+
+  const tx = new VersionedTransaction(messageV0);
 
   return { signers, tx };
 }

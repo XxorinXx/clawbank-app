@@ -32,20 +32,12 @@ vi.mock("@sqds/smart-account", () => {
       // Return [seed] as a deterministic fake PDA
       return [seed];
     },
-    transactions: {
+    transactions: {},
+    instructions: {
       createSmartAccount: (args: any) => {
         calls.createSmartAccount.push(args);
-        // Return a minimal VersionedTransaction
-        const { TransactionMessage, VersionedTransaction } = require("@solana/web3.js");
-        const msg = new TransactionMessage({
-          payerKey: args.creator,
-          recentBlockhash: args.blockhash,
-          instructions: [],
-        }).compileToV0Message();
-        return new VersionedTransaction(msg);
+        return makeFakeInstruction("createSmartAccount", args);
       },
-    },
-    instructions: {
       addSignerAsAuthority: (args: any) => {
         calls.addSignerAsAuthority.push(args);
         return makeFakeInstruction("addSignerAsAuthority", args);
