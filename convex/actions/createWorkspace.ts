@@ -83,9 +83,9 @@ export const buildCreateWorkspaceTx = action({
     const [programConfig] =
       smartAccount.accounts.ProgramConfig.fromAccountInfo(programConfigInfo);
     const protocolTreasury = programConfig.treasury;
-    const nextAccountIndex = BigInt(
-      programConfig.smartAccountIndex.toString(),
-    );
+    // The on-chain program uses smart_account_index + 1 as the seed for the
+    // new settings PDA, then increments the stored index after creation.
+    const nextAccountIndex = BigInt(programConfig.smartAccountIndex.toString()) + 1n;
 
     // Derive the settings PDA from the next account index
     const [settingsPda] = smartAccount.getSettingsPda({
