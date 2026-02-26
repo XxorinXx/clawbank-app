@@ -45,7 +45,7 @@ function createMockCtx(): MockCtx {
   return {
     runMutation: mockAsyncFn(async () => "fakeId"),
     runQuery: mockAsyncFn(async () => ({
-      multisigAddress: "fakeAddr",
+      settingsAddress: "fakeAddr",
       members: [{ key: { toBase58: () => "member1" } }],
     })),
   };

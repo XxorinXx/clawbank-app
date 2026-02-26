@@ -11,13 +11,13 @@ export default defineSchema({
 
   workspaces: defineTable({
     name: v.string(),
-    multisigAddress: v.string(),
+    settingsAddress: v.string(),
     vaultAddress: v.string(),
     creatorTokenIdentifier: v.string(),
     createdAt: v.number(),
   })
     .index("by_creator", ["creatorTokenIdentifier"])
-    .index("by_multisig", ["multisigAddress"]),
+    .index("by_settings", ["settingsAddress"]),
 
   workspace_members: defineTable({
     workspaceId: v.id("workspaces"),

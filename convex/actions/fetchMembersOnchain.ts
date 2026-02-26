@@ -33,7 +33,7 @@ export const fetchMembersOnchain = action({
     }
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
 
     const multisigAccount = await multisig.accounts.Multisig.fromAccountAddress(
       connection,

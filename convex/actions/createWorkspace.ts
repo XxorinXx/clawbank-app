@@ -129,7 +129,7 @@ export const submitCreateWorkspaceTx = action({
   handler: async (
     ctx,
     args,
-  ): Promise<{ workspaceId: string; multisigAddress: string; vaultAddress: string }> => {
+  ): Promise<{ workspaceId: string; settingsAddress: string; vaultAddress: string }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 
@@ -173,7 +173,7 @@ export const submitCreateWorkspaceTx = action({
     const [multisigPda] = multisig.getMultisigPda({
       createKey: createKeyPubkey,
     });
-    const multisigAddress = multisigPda.toBase58();
+    const settingsAddress = multisigPda.toBase58();
     const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
     const vaultAddress = vaultPda.toBase58();
 
@@ -185,7 +185,7 @@ export const submitCreateWorkspaceTx = action({
       internal.internals.workspaceHelpers.storeWorkspace,
       {
         name: args.name.trim(),
-        multisigAddress,
+        settingsAddress,
         vaultAddress,
         creatorTokenIdentifier: identity.tokenIdentifier,
         createdAt: now,
@@ -205,6 +205,6 @@ export const submitCreateWorkspaceTx = action({
       },
     );
 
-    return { workspaceId, multisigAddress, vaultAddress };
+    return { workspaceId, settingsAddress, vaultAddress };
   },
 });

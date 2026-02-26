@@ -42,7 +42,7 @@ export const buildRemoveMemberTx = action({
     if (!workspace) throw new Error("Workspace not found");
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
     const memberToRemove = new PublicKey(args.memberPublicKey);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
@@ -137,7 +137,7 @@ export const submitRemoveMemberTx = action({
     );
     if (!workspace) throw new Error("Workspace not found");
 
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
 
     // Read the updated on-chain multisig state
     const multisigAccount =

@@ -69,7 +69,7 @@ export const buildSpendingLimitUpdateTx = action({
     const decimals = tokenMeta?.decimals ?? 9;
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);

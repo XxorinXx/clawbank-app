@@ -55,7 +55,7 @@ export const buildApproveTransferRequest = action({
     if (!workspace) throw new Error("Workspace not found");
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
 
@@ -209,7 +209,7 @@ export const denyTransferRequest = action({
     if (!workspace) throw new Error("Workspace not found");
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
 

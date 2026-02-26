@@ -128,7 +128,7 @@ export const agentTransfer = action({
 
     // ── Shared setup ─────────────────────────────────────────────────
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
     const agentPubkey = new PublicKey(agent.publicKey);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
 

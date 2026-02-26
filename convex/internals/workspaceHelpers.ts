@@ -74,7 +74,7 @@ export const getWorkspaceById = internalQuery({
 export const storeWorkspace = internalMutation({
   args: {
     name: v.string(),
-    multisigAddress: v.string(),
+    settingsAddress: v.string(),
     vaultAddress: v.string(),
     creatorTokenIdentifier: v.string(),
     createdAt: v.number(),
@@ -93,7 +93,7 @@ export const storeWorkspace = internalMutation({
   handler: async (ctx, args): Promise<Id<"workspaces">> => {
     const workspaceId = await ctx.db.insert("workspaces", {
       name: args.name,
-      multisigAddress: args.multisigAddress,
+      settingsAddress: args.settingsAddress,
       vaultAddress: args.vaultAddress,
       creatorTokenIdentifier: args.creatorTokenIdentifier,
       createdAt: args.createdAt,
