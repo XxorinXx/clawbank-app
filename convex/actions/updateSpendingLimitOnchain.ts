@@ -3,7 +3,6 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
 import {
   Connection,
   Keypair,
@@ -74,25 +73,16 @@ export const buildSpendingLimitUpdateTx = action({
     const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);
 
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
-        connection,
-        multisigPda,
-      );
-
-    const currentTransactionIndex = Number(multisigAccount.transactionIndex);
-
     const createKey = Keypair.generate();
     const { blockhash } = await connection.getLatestBlockhash();
 
     const { tx } = buildSpendingLimitUpdateTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
-      multisigPda,
+      settingsPda: multisigPda,
       agentPubkey,
-      currentTransactionIndex,
-      oldOnchainCreateKey: oldOnchainCreateKey ?? null,
-      createKeyPublicKey: createKey.publicKey,
+      oldSeed: oldOnchainCreateKey ?? null,
+      seed: createKey.publicKey,
       tokenMint: args.tokenMint === NATIVE_SOL_MINT
         ? PublicKey.default
         : new PublicKey(args.tokenMint),

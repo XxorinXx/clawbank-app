@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   Connection,
   Keypair,
@@ -30,7 +30,7 @@ export const buildAgentRevocationTx = action({
     );
     if (!user) throw new Error("User not found");
 
-    // Load workspace for multisig PDA
+    // Load workspace for settings PDA
     const workspace = await ctx.runQuery(
       internal.internals.workspaceHelpers.getWorkspaceById,
       { workspaceId: args.workspaceId },
@@ -55,23 +55,21 @@ export const buildAgentRevocationTx = action({
     const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);
 
-    // Read current multisig transaction index
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
+    // Read current smart account settings
+    const settingsAccount =
+      await smartAccount.accounts.Settings.fromAccountAddress(
         connection,
         multisigPda,
       );
-    const currentTransactionIndex = Number(multisigAccount.transactionIndex);
 
-    // Check if agent is actually an on-chain member.
-    // The Squads remove_member action throws NotAMember if the pubkey isn't in
-    // the member list — this happens when the agent was never activated on-chain
+    // Check if agent is actually an on-chain signer.
+    // The Smart Account remove_signer action throws if the pubkey isn't in
+    // the signer list — this happens when the agent was never activated on-chain
     // or was already removed.
-    const agentIsMember = multisigAccount.members.some(
-      (m: multisig.types.Member) =>
-        m.key.toBase58() === agentPubkey.toBase58(),
+    const agentIsSigner = settingsAccount.signers.some(
+      (s: { key: PublicKey }) => s.key.toBase58() === agentPubkey.toBase58(),
     );
-    if (!agentIsMember) {
+    if (!agentIsSigner) {
       // Agent not on-chain — skip on-chain tx, do DB-only revocation
       return { serializedTx: "" };
     }
@@ -89,10 +87,9 @@ export const buildAgentRevocationTx = action({
     const { tx } = buildAgentRevocationTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
-      multisigPda,
+      settingsPda: multisigPda,
       agentPubkey,
-      currentTransactionIndex,
-      onchainCreateKey,
+      oldSeed: onchainCreateKey,
       blockhash,
     });
 

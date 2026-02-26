@@ -79,7 +79,7 @@ async function simulateSubmitCreateWorkspace(
     signature = await overrides.sendTransaction({}, { skipPreflight: false });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    throw new Error(`Failed to create multisig on Solana: ${message}`);
+    throw new Error(`Failed to create smart account on Solana: ${message}`);
   }
 
   try {
@@ -240,7 +240,7 @@ describe("submit atomicity — DB writes only after on-chain confirmation", () =
 
       await expect(
         simulateSubmitCreateWorkspace(overrides, ctx),
-      ).rejects.toThrow("Failed to create multisig on Solana");
+      ).rejects.toThrow("Failed to create smart account on Solana");
 
       expect(ctx.runMutation).not.toHaveBeenCalled();
     });

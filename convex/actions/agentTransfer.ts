@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   Connection,
   Keypair,
@@ -128,7 +128,7 @@ export const agentTransfer = action({
 
     // ── Shared setup ─────────────────────────────────────────────────
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.settingsAddress);
+    const settingsPda = new PublicKey(workspace.settingsAddress);
     const agentPubkey = new PublicKey(agent.publicKey);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
 
@@ -143,7 +143,7 @@ export const agentTransfer = action({
         snapshot,
         solLimit: solLimit!,
         connection,
-        multisigPda,
+        settingsPda,
         agentPubkey,
         sponsorKeypair,
         agent,
@@ -158,7 +158,7 @@ export const agentTransfer = action({
         desc,
         snapshot,
         connection,
-        multisigPda,
+        settingsPda,
         agentPubkey,
         sponsorKeypair,
       });
@@ -178,7 +178,7 @@ interface UnderLimitParams {
   snapshot: { limitAmount: number; spentAmount: number; periodType: string };
   solLimit: { onchainCreateKey?: string; tokenMint: string };
   connection: Connection;
-  multisigPda: PublicKey;
+  settingsPda: PublicKey;
   agentPubkey: PublicKey;
   sponsorKeypair: Keypair;
   agent: { publicKey?: string };
@@ -204,18 +204,18 @@ async function executeUnderLimit(
 
   try {
     // Build spending limit use instruction
-    const [spendingLimitPda] = multisig.getSpendingLimitPda({
-      multisigPda: p.multisigPda,
-      createKey: new PublicKey(p.solLimit.onchainCreateKey!),
+    const [spendingLimitPda] = smartAccount.getSpendingLimitPda({
+      settingsPda: p.settingsPda,
+      seed: new PublicKey(p.solLimit.onchainCreateKey!),
     });
 
     // For native SOL, omit `mint` — the SDK handles SOL transfers natively
-    const useIx = multisig.instructions.spendingLimitUse({
-      multisigPda: p.multisigPda,
-      member: p.agentPubkey,
+    const useIx = smartAccount.instructions.useSpendingLimit({
+      settingsPda: p.settingsPda,
+      signer: p.agentPubkey,
       spendingLimit: spendingLimitPda,
       destination: p.recipientPubkey,
-      vaultIndex: 0,
+      accountIndex: 0,
       amount: p.amountLamports,
       decimals: 9,
     });
@@ -327,7 +327,7 @@ async function executeUnderLimit(
   }
 }
 
-// ── Over-limit: create Squads vault transaction proposal ───────────────
+// ── Over-limit: create Smart Account transaction proposal ───────────────
 
 interface ProposalParams {
   agentId: Id<"agents">;
@@ -338,7 +338,7 @@ interface ProposalParams {
   desc: string;
   snapshot: { limitAmount: number; spentAmount: number; periodType: string };
   connection: Connection;
-  multisigPda: PublicKey;
+  settingsPda: PublicKey;
   agentPubkey: PublicKey;
   sponsorKeypair: Keypair;
 }
@@ -362,46 +362,46 @@ async function createProposal(
   );
 
   try {
-    const [vaultPda] = multisig.getVaultPda({
-      multisigPda: p.multisigPda,
-      index: 0,
+    const [smartAccountPda] = smartAccount.getSmartAccountPda({
+      settingsPda: p.settingsPda,
+      accountIndex: 0,
     });
 
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
+    const settingsAccount =
+      await smartAccount.accounts.Settings.fromAccountAddress(
         p.connection,
-        p.multisigPda,
+        p.settingsPda,
       );
     const nextTransactionIndex = BigInt(
-      Number(multisigAccount.transactionIndex) + 1,
+      Number(settingsAccount.transactionIndex) + 1,
     );
 
     // Build the inner SOL transfer instruction
     const transferIx = SystemProgram.transfer({
-      fromPubkey: vaultPda,
+      fromPubkey: smartAccountPda,
       toPubkey: p.recipientPubkey,
       lamports: p.amountLamports,
     });
 
-    // Build vault transaction + proposal
-    const vaultTxCreateIx = multisig.instructions.vaultTransactionCreate({
-      multisigPda: p.multisigPda,
+    // Build transaction + proposal
+    const txCreateIx = smartAccount.instructions.createTransaction({
+      settingsPda: p.settingsPda,
       transactionIndex: nextTransactionIndex,
       creator: p.agentPubkey,
       rentPayer: p.sponsorKeypair.publicKey,
-      vaultIndex: 0,
+      accountIndex: 0,
       ephemeralSigners: 0,
       transactionMessage: new TransactionMessage({
-        payerKey: vaultPda,
+        payerKey: smartAccountPda,
         recentBlockhash: PublicKey.default.toBase58(),
         instructions: [transferIx],
       }),
     });
 
     // isDraft: false (default) creates the proposal directly as Active,
-    // so members can vote immediately — no separate proposalActivate needed.
-    const proposalCreateIx = multisig.instructions.proposalCreate({
-      multisigPda: p.multisigPda,
+    // so signers can vote immediately — no separate activateProposal needed.
+    const proposalCreateIx = smartAccount.instructions.createProposal({
+      settingsPda: p.settingsPda,
       transactionIndex: nextTransactionIndex,
       creator: p.agentPubkey,
       rentPayer: p.sponsorKeypair.publicKey,
@@ -413,7 +413,7 @@ async function createProposal(
     const messageV0 = new TransactionMessage({
       payerKey: p.sponsorKeypair.publicKey,
       recentBlockhash: blockhash,
-      instructions: [vaultTxCreateIx, proposalCreateIx],
+      instructions: [txCreateIx, proposalCreateIx],
     }).compileToV0Message();
 
     const tx = new VersionedTransaction(messageV0);
@@ -434,8 +434,8 @@ async function createProposal(
     );
 
     // Derive the proposal PDA for storage
-    const [proposalPda] = multisig.getProposalPda({
-      multisigPda: p.multisigPda,
+    const [proposalPda] = smartAccount.getProposalPda({
+      settingsPda: p.settingsPda,
       transactionIndex: nextTransactionIndex,
     });
 

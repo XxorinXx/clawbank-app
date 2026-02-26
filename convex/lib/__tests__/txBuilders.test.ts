@@ -3,17 +3,17 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 
 const RPC_URL = "https://api.mainnet-beta.solana.com";
 
-// We mock the @sqds/multisig module so the instruction builders return
+// We mock the @sqds/smart-account module so the instruction builders return
 // plain objects whose arguments we can inspect. This lets us assert on
-// the exact keys passed to each Squads instruction.
-vi.mock("@sqds/multisig", () => {
+// the exact keys passed to each Smart Account instruction.
+vi.mock("@sqds/smart-account", () => {
   // Track every instruction call for inspection
   const calls = {
-    multisigCreateV2: [] as any[],
-    configTransactionCreate: [] as any[],
-    proposalCreate: [] as any[],
-    proposalApprove: [] as any[],
-    configTransactionExecute: [] as any[],
+    createSmartAccount: [] as any[],
+    addSignerAsAuthority: [] as any[],
+    removeSignerAsAuthority: [] as any[],
+    addSpendingLimitAsAuthority: [] as any[],
+    removeSpendingLimitAsAuthority: [] as any[],
   };
 
   const makeFakeInstruction = (name: string, args: any) => {
@@ -28,20 +28,14 @@ vi.mock("@sqds/multisig", () => {
   };
 
   return {
-    getMultisigPda: ({ createKey }: { createKey: PublicKey }) => {
-      // Deterministic fake PDA
-      return [createKey];
-    },
-    getSpendingLimitPda: ({ multisigPda, createKey }: { multisigPda: PublicKey; createKey: PublicKey }) => {
-      return [createKey];
-    },
-    getProgramConfigPda: () => {
-      return [Keypair.generate().publicKey];
+    getSpendingLimitPda: ({ settingsPda, seed }: { settingsPda: PublicKey; seed: PublicKey }) => {
+      // Return [seed] as a deterministic fake PDA
+      return [seed];
     },
     transactions: {
-      multisigCreateV2: (args: any) => {
-        calls.multisigCreateV2.push(args);
-        // Return a minimal VersionedTransaction mock
+      createSmartAccount: (args: any) => {
+        calls.createSmartAccount.push(args);
+        // Return a minimal VersionedTransaction
         const { TransactionMessage, VersionedTransaction } = require("@solana/web3.js");
         const msg = new TransactionMessage({
           payerKey: args.creator,
@@ -52,32 +46,21 @@ vi.mock("@sqds/multisig", () => {
       },
     },
     instructions: {
-      configTransactionCreate: (args: any) => {
-        calls.configTransactionCreate.push(args);
-        return makeFakeInstruction("configTransactionCreate", args);
+      addSignerAsAuthority: (args: any) => {
+        calls.addSignerAsAuthority.push(args);
+        return makeFakeInstruction("addSignerAsAuthority", args);
       },
-      proposalCreate: (args: any) => {
-        calls.proposalCreate.push(args);
-        return makeFakeInstruction("proposalCreate", args);
+      removeSignerAsAuthority: (args: any) => {
+        calls.removeSignerAsAuthority.push(args);
+        return makeFakeInstruction("removeSignerAsAuthority", args);
       },
-      proposalApprove: (args: any) => {
-        calls.proposalApprove.push(args);
-        return makeFakeInstruction("proposalApprove", args);
+      addSpendingLimitAsAuthority: (args: any) => {
+        calls.addSpendingLimitAsAuthority.push(args);
+        return makeFakeInstruction("addSpendingLimitAsAuthority", args);
       },
-      configTransactionExecute: (args: any) => {
-        calls.configTransactionExecute.push(args);
-        return makeFakeInstruction("configTransactionExecute", args);
-      },
-    },
-    accounts: {
-      ProgramConfig: {
-        fromAccountInfo: () => [{ treasury: Keypair.generate().publicKey }],
-      },
-      Multisig: {
-        fromAccountAddress: async () => ({
-          transactionIndex: 5,
-          members: [],
-        }),
+      removeSpendingLimitAsAuthority: (args: any) => {
+        calls.removeSpendingLimitAsAuthority.push(args);
+        return makeFakeInstruction("removeSpendingLimitAsAuthority", args);
       },
     },
     types: {
@@ -91,24 +74,25 @@ vi.mock("@sqds/multisig", () => {
         Execute: 4,
       },
       Period: {
-        Day: 0,
-        Week: 1,
-        Month: 2,
+        OneTime: 0,
+        Day: 1,
+        Week: 2,
+        Month: 3,
       },
     },
     // Expose calls for test assertions
     _testCalls: calls,
     _resetCalls: () => {
-      calls.multisigCreateV2 = [];
-      calls.configTransactionCreate = [];
-      calls.proposalCreate = [];
-      calls.proposalApprove = [];
-      calls.configTransactionExecute = [];
+      calls.createSmartAccount = [];
+      calls.addSignerAsAuthority = [];
+      calls.removeSignerAsAuthority = [];
+      calls.addSpendingLimitAsAuthority = [];
+      calls.removeSpendingLimitAsAuthority = [];
     },
   };
 });
 
-import * as multisigMock from "@sqds/multisig";
+import * as smartAccountMock from "@sqds/smart-account";
 import {
   buildCreateWorkspaceTxCore,
   buildSpendingLimitUpdateTxCore,
@@ -117,14 +101,14 @@ import {
   buildAgentRevocationTxCore,
 } from "../txBuilders";
 
-const mock = multisigMock as any;
+const mock = smartAccountMock as any;
 
 // Stable test keys
 const USER_WALLET = Keypair.generate().publicKey;
 const SPONSOR_PUBKEY = Keypair.generate().publicKey;
 const AGENT_PUBKEY = Keypair.generate().publicKey;
-const MULTISIG_PDA = Keypair.generate().publicKey;
-const CREATE_KEY = Keypair.generate().publicKey;
+const SETTINGS_PDA = Keypair.generate().publicKey;
+const SEED = Keypair.generate().publicKey;
 const TOKEN_MINT = Keypair.generate().publicKey;
 const MEMBER_TO_REMOVE = Keypair.generate().publicKey;
 const EXTRA_MEMBER = Keypair.generate().publicKey;
@@ -161,51 +145,48 @@ describe("txBuilders — sponsor role invariants", () => {
   // =======================================================================
   describe("buildCreateWorkspaceTxCore", () => {
     it("sets creator to userWallet (not sponsor)", () => {
-      const result = buildCreateWorkspaceTxCore({
+      buildCreateWorkspaceTxCore({
         creatorWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
         walletMemberKeys: [EXTRA_MEMBER],
-        createKeyPublicKey: CREATE_KEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         treasury: TREASURY,
         blockhash: BLOCKHASH,
       });
 
-      const call = mock._testCalls.multisigCreateV2[0];
+      const call = mock._testCalls.createSmartAccount[0];
       expect(call).toBeDefined();
       expectKeyEquals(call.creator, USER_WALLET, "creator");
     });
 
-    it("sponsor is NOT in the members array", () => {
-      const result = buildCreateWorkspaceTxCore({
+    it("sponsor is NOT in the signers array", () => {
+      buildCreateWorkspaceTxCore({
         creatorWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
         walletMemberKeys: [EXTRA_MEMBER],
-        createKeyPublicKey: CREATE_KEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         treasury: TREASURY,
         blockhash: BLOCKHASH,
       });
 
-      const call = mock._testCalls.multisigCreateV2[0];
-      const memberKeys = call.members.map((m: any) => m.key.toBase58());
-      expect(memberKeys).not.toContain(SPONSOR_PUBKEY.toBase58());
+      const call = mock._testCalls.createSmartAccount[0];
+      const signerKeys = call.signers.map((s: any) => s.key.toBase58());
+      expect(signerKeys).not.toContain(SPONSOR_PUBKEY.toBase58());
     });
 
-    it("members include creator + wallet members", () => {
+    it("signers include creator + wallet members", () => {
       const result = buildCreateWorkspaceTxCore({
         creatorWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
         walletMemberKeys: [EXTRA_MEMBER],
-        createKeyPublicKey: CREATE_KEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         treasury: TREASURY,
         blockhash: BLOCKHASH,
       });
 
-      expect(result.members).toHaveLength(2);
-      expectKeyEquals(result.members[0].key, USER_WALLET, "members[0]");
-      expectKeyEquals(result.members[1].key, EXTRA_MEMBER, "members[1]");
+      expect(result.signers).toHaveLength(2);
+      expectKeyEquals(result.signers[0].key, USER_WALLET, "signers[0]");
+      expectKeyEquals(result.signers[1].key, EXTRA_MEMBER, "signers[1]");
     });
 
     it("returns a VersionedTransaction", () => {
@@ -213,8 +194,7 @@ describe("txBuilders — sponsor role invariants", () => {
         creatorWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
         walletMemberKeys: [],
-        createKeyPublicKey: CREATE_KEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         treasury: TREASURY,
         blockhash: BLOCKHASH,
       });
@@ -228,15 +208,14 @@ describe("txBuilders — sponsor role invariants", () => {
   // spendingLimitUpdate
   // =======================================================================
   describe("buildSpendingLimitUpdateTxCore", () => {
-    it("uses userWallet as creator/member, sponsor as rentPayer — fresh limit", () => {
-      buildSpendingLimitUpdateTxCore({
+    it("fresh limit: 1 addSpendingLimitAsAuthority instruction", () => {
+      const result = buildSpendingLimitUpdateTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        oldOnchainCreateKey: null,
-        createKeyPublicKey: CREATE_KEY,
+        oldSeed: null,
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -244,44 +223,24 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      // Should have 1 configTransactionCreate (add), 1 proposalCreate, 1 approve, 1 execute
-      const configCalls = mock._testCalls.configTransactionCreate;
-      const proposalCalls = mock._testCalls.proposalCreate;
-      const approveCalls = mock._testCalls.proposalApprove;
-      const executeCalls = mock._testCalls.configTransactionExecute;
+      const addCalls = mock._testCalls.addSpendingLimitAsAuthority;
+      const removeCalls = mock._testCalls.removeSpendingLimitAsAuthority;
 
-      expect(configCalls).toHaveLength(1);
-      expect(proposalCalls).toHaveLength(1);
-      expect(approveCalls).toHaveLength(1);
-      expect(executeCalls).toHaveLength(1);
-
-      // configTransactionCreate: creator = user, rentPayer = sponsor
-      expectKeyEquals(configCalls[0].creator, USER_WALLET, "config.creator");
-      expectKeyEquals(configCalls[0].rentPayer, SPONSOR_PUBKEY, "config.rentPayer");
-
-      // proposalCreate
-      expectKeyEquals(proposalCalls[0].creator, USER_WALLET, "proposal.creator");
-      expectKeyEquals(proposalCalls[0].rentPayer, SPONSOR_PUBKEY, "proposal.rentPayer");
-
-      // proposalApprove
-      expectKeyEquals(approveCalls[0].member, USER_WALLET, "approve.member");
-
-      // configTransactionExecute
-      expectKeyEquals(executeCalls[0].member, USER_WALLET, "execute.member");
-      expectKeyEquals(executeCalls[0].rentPayer, SPONSOR_PUBKEY, "execute.rentPayer");
+      expect(addCalls).toHaveLength(1);
+      expect(removeCalls).toHaveLength(0);
+      expect(result.instructions).toHaveLength(1);
     });
 
-    it("builds remove + add when oldOnchainCreateKey exists", () => {
-      const OLD_CREATE_KEY = Keypair.generate().publicKey;
+    it("with old limit: removeSpendingLimitAsAuthority + addSpendingLimitAsAuthority (2 instructions)", () => {
+      const OLD_SEED = Keypair.generate().publicKey;
 
-      buildSpendingLimitUpdateTxCore({
+      const result = buildSpendingLimitUpdateTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        oldOnchainCreateKey: OLD_CREATE_KEY.toBase58(),
-        createKeyPublicKey: CREATE_KEY,
+        oldSeed: OLD_SEED.toBase58(),
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -289,51 +248,24 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      // 2 configTransactionCreate (remove + add)
-      const configCalls = mock._testCalls.configTransactionCreate;
-      expect(configCalls).toHaveLength(2);
+      const addCalls = mock._testCalls.addSpendingLimitAsAuthority;
+      const removeCalls = mock._testCalls.removeSpendingLimitAsAuthority;
 
-      // Both use userWallet as creator, sponsor as rentPayer
-      for (const call of configCalls) {
-        expectKeyEquals(call.creator, USER_WALLET, "config.creator");
-        expectKeyEquals(call.rentPayer, SPONSOR_PUBKEY, "config.rentPayer");
-      }
-
-      // First action is RemoveSpendingLimit
-      expect(configCalls[0].actions[0].__kind).toBe("RemoveSpendingLimit");
-      // Second action is AddSpendingLimit
-      expect(configCalls[1].actions[0].__kind).toBe("AddSpendingLimit");
+      expect(removeCalls).toHaveLength(1);
+      expect(addCalls).toHaveLength(1);
+      expect(result.instructions).toHaveLength(2);
     });
 
-    it("sets payerKey to sponsor in TransactionMessage", () => {
-      const result = buildSpendingLimitUpdateTxCore({
-        userWallet: USER_WALLET,
-        sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
-        agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        oldOnchainCreateKey: null,
-        createKeyPublicKey: CREATE_KEY,
-        tokenMint: TOKEN_MINT,
-        limitAmount: 50,
-        decimals: 9,
-        periodType: "monthly",
-        blockhash: BLOCKHASH,
-      });
+    it("userWallet is settingsAuthority, sponsor is rentPayer/rentCollector", () => {
+      const OLD_SEED = Keypair.generate().publicKey;
 
-      expect(result.tx).toBeDefined();
-      expect(result.instructions.length).toBeGreaterThan(0);
-    });
-
-    it("sponsor key never appears as creator or member in any instruction", () => {
       buildSpendingLimitUpdateTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        oldOnchainCreateKey: Keypair.generate().publicKey.toBase58(),
-        createKeyPublicKey: CREATE_KEY,
+        oldSeed: OLD_SEED.toBase58(),
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -341,17 +273,37 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      for (const call of mock._testCalls.configTransactionCreate) {
-        expect(call.creator.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      // removeSpendingLimitAsAuthority
+      const removeCall = mock._testCalls.removeSpendingLimitAsAuthority[0];
+      expectKeyEquals(removeCall.settingsAuthority, USER_WALLET, "remove.settingsAuthority");
+      expectKeyEquals(removeCall.rentCollector, SPONSOR_PUBKEY, "remove.rentCollector");
+
+      // addSpendingLimitAsAuthority
+      const addCall = mock._testCalls.addSpendingLimitAsAuthority[0];
+      expectKeyEquals(addCall.settingsAuthority, USER_WALLET, "add.settingsAuthority");
+      expectKeyEquals(addCall.rentPayer, SPONSOR_PUBKEY, "add.rentPayer");
+    });
+
+    it("sponsor never appears as settingsAuthority", () => {
+      buildSpendingLimitUpdateTxCore({
+        userWallet: USER_WALLET,
+        sponsorPublicKey: SPONSOR_PUBKEY,
+        settingsPda: SETTINGS_PDA,
+        agentPubkey: AGENT_PUBKEY,
+        oldSeed: Keypair.generate().publicKey.toBase58(),
+        seed: SEED,
+        tokenMint: TOKEN_MINT,
+        limitAmount: 100,
+        decimals: 6,
+        periodType: "daily",
+        blockhash: BLOCKHASH,
+      });
+
+      for (const call of mock._testCalls.addSpendingLimitAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
-      for (const call of mock._testCalls.proposalCreate) {
-        expect(call.creator.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
-      }
-      for (const call of mock._testCalls.proposalApprove) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
-      }
-      for (const call of mock._testCalls.configTransactionExecute) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      for (const call of mock._testCalls.removeSpendingLimitAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
     });
   });
@@ -360,80 +312,56 @@ describe("txBuilders — sponsor role invariants", () => {
   // removeMember
   // =======================================================================
   describe("buildRemoveMemberTxCore", () => {
-    it("uses userWallet as creator/member, sponsor as rentPayer", () => {
-      buildRemoveMemberTxCore({
-        userWallet: USER_WALLET,
-        sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
-        memberToRemove: MEMBER_TO_REMOVE,
-        currentTransactionIndex: 3,
-        blockhash: BLOCKHASH,
-      });
-
-      const configCalls = mock._testCalls.configTransactionCreate;
-      const proposalCalls = mock._testCalls.proposalCreate;
-      const approveCalls = mock._testCalls.proposalApprove;
-      const executeCalls = mock._testCalls.configTransactionExecute;
-
-      expect(configCalls).toHaveLength(1);
-      expectKeyEquals(configCalls[0].creator, USER_WALLET, "config.creator");
-      expectKeyEquals(configCalls[0].rentPayer, SPONSOR_PUBKEY, "config.rentPayer");
-
-      expectKeyEquals(proposalCalls[0].creator, USER_WALLET, "proposal.creator");
-      expectKeyEquals(proposalCalls[0].rentPayer, SPONSOR_PUBKEY, "proposal.rentPayer");
-
-      expectKeyEquals(approveCalls[0].member, USER_WALLET, "approve.member");
-
-      expectKeyEquals(executeCalls[0].member, USER_WALLET, "execute.member");
-      expectKeyEquals(executeCalls[0].rentPayer, SPONSOR_PUBKEY, "execute.rentPayer");
-    });
-
-    it("action is RemoveMember with the correct target", () => {
-      buildRemoveMemberTxCore({
-        userWallet: USER_WALLET,
-        sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
-        memberToRemove: MEMBER_TO_REMOVE,
-        currentTransactionIndex: 3,
-        blockhash: BLOCKHASH,
-      });
-
-      const configCall = mock._testCalls.configTransactionCreate[0];
-      expect(configCall.actions[0].__kind).toBe("RemoveMember");
-      expectKeyEquals(configCall.actions[0].oldMember, MEMBER_TO_REMOVE, "oldMember");
-    });
-
-    it("builds 4 instructions: config, proposal, approve, execute", () => {
+    it("builds 1 instruction (removeSignerAsAuthority)", () => {
       const result = buildRemoveMemberTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         memberToRemove: MEMBER_TO_REMOVE,
-        currentTransactionIndex: 3,
         blockhash: BLOCKHASH,
       });
 
-      expect(result.instructions).toHaveLength(4);
+      expect(result.instructions).toHaveLength(1);
+      expect(mock._testCalls.removeSignerAsAuthority).toHaveLength(1);
     });
 
-    it("sponsor key never appears as creator or member", () => {
+    it("userWallet is settingsAuthority", () => {
       buildRemoveMemberTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         memberToRemove: MEMBER_TO_REMOVE,
-        currentTransactionIndex: 3,
         blockhash: BLOCKHASH,
       });
 
-      for (const call of mock._testCalls.configTransactionCreate) {
-        expect(call.creator.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
-      }
-      for (const call of mock._testCalls.proposalApprove) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
-      }
-      for (const call of mock._testCalls.configTransactionExecute) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      const call = mock._testCalls.removeSignerAsAuthority[0];
+      expectKeyEquals(call.settingsAuthority, USER_WALLET, "settingsAuthority");
+    });
+
+    it("targets the correct oldSigner", () => {
+      buildRemoveMemberTxCore({
+        userWallet: USER_WALLET,
+        sponsorPublicKey: SPONSOR_PUBKEY,
+        settingsPda: SETTINGS_PDA,
+        memberToRemove: MEMBER_TO_REMOVE,
+        blockhash: BLOCKHASH,
+      });
+
+      const call = mock._testCalls.removeSignerAsAuthority[0];
+      expectKeyEquals(call.oldSigner, MEMBER_TO_REMOVE, "oldSigner");
+    });
+
+    it("sponsor key never appears as settingsAuthority", () => {
+      buildRemoveMemberTxCore({
+        userWallet: USER_WALLET,
+        sponsorPublicKey: SPONSOR_PUBKEY,
+        settingsPda: SETTINGS_PDA,
+        memberToRemove: MEMBER_TO_REMOVE,
+        blockhash: BLOCKHASH,
+      });
+
+      for (const call of mock._testCalls.removeSignerAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
     });
   });
@@ -442,14 +370,13 @@ describe("txBuilders — sponsor role invariants", () => {
   // agentActivation
   // =======================================================================
   describe("buildAgentActivationTxCore", () => {
-    it("uses userWallet as creator/member, sponsor only as rentPayer", () => {
-      buildAgentActivationTxCore({
+    it("builds 2 instructions (addSignerAsAuthority + addSpendingLimitAsAuthority)", () => {
+      const result = buildAgentActivationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        createKeyPublicKey: CREATE_KEY,
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -457,28 +384,18 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      const configCalls = mock._testCalls.configTransactionCreate;
-      const proposalCalls = mock._testCalls.proposalCreate;
-      const approveCalls = mock._testCalls.proposalApprove;
-      const executeCalls = mock._testCalls.configTransactionExecute;
-
-      expectKeyEquals(configCalls[0].creator, USER_WALLET, "config.creator");
-      expectKeyEquals(configCalls[0].rentPayer, SPONSOR_PUBKEY, "config.rentPayer");
-      expectKeyEquals(proposalCalls[0].creator, USER_WALLET, "proposal.creator");
-      expectKeyEquals(proposalCalls[0].rentPayer, SPONSOR_PUBKEY, "proposal.rentPayer");
-      expectKeyEquals(approveCalls[0].member, USER_WALLET, "approve.member");
-      expectKeyEquals(executeCalls[0].member, USER_WALLET, "execute.member");
-      expectKeyEquals(executeCalls[0].rentPayer, SPONSOR_PUBKEY, "execute.rentPayer");
+      expect(result.instructions).toHaveLength(2);
+      expect(mock._testCalls.addSignerAsAuthority).toHaveLength(1);
+      expect(mock._testCalls.addSpendingLimitAsAuthority).toHaveLength(1);
     });
 
-    it("includes AddMember + AddSpendingLimit actions", () => {
+    it("userWallet is settingsAuthority, sponsor is rentPayer", () => {
       buildAgentActivationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        createKeyPublicKey: CREATE_KEY,
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -486,20 +403,22 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      const configCall = mock._testCalls.configTransactionCreate[0];
-      expect(configCall.actions).toHaveLength(2);
-      expect(configCall.actions[0].__kind).toBe("AddMember");
-      expect(configCall.actions[1].__kind).toBe("AddSpendingLimit");
+      const signerCall = mock._testCalls.addSignerAsAuthority[0];
+      expectKeyEquals(signerCall.settingsAuthority, USER_WALLET, "signer.settingsAuthority");
+      expectKeyEquals(signerCall.rentPayer, SPONSOR_PUBKEY, "signer.rentPayer");
+
+      const limitCall = mock._testCalls.addSpendingLimitAsAuthority[0];
+      expectKeyEquals(limitCall.settingsAuthority, USER_WALLET, "limit.settingsAuthority");
+      expectKeyEquals(limitCall.rentPayer, SPONSOR_PUBKEY, "limit.rentPayer");
     });
 
-    it("AddMember targets agent key (not user or sponsor)", () => {
+    it("agent key in newSigner with Initiate permission", () => {
       buildAgentActivationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        createKeyPublicKey: CREATE_KEY,
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -507,19 +426,19 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      const configCall = mock._testCalls.configTransactionCreate[0];
-      const addMember = configCall.actions[0];
-      expectKeyEquals(addMember.newMember.key, AGENT_PUBKEY, "newMember.key");
+      const signerCall = mock._testCalls.addSignerAsAuthority[0];
+      expectKeyEquals(signerCall.newSigner.key, AGENT_PUBKEY, "newSigner.key");
+      // fromPermissions([Initiate]) → {mask: 1} (length of array)
+      expect(signerCall.newSigner.permissions.mask).toBe(1);
     });
 
-    it("sponsor key never appears as creator or member", () => {
+    it("sponsor key never appears as settingsAuthority", () => {
       buildAgentActivationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        createKeyPublicKey: CREATE_KEY,
+        seed: SEED,
         tokenMint: TOKEN_MINT,
         limitAmount: 100,
         decimals: 6,
@@ -527,11 +446,11 @@ describe("txBuilders — sponsor role invariants", () => {
         blockhash: BLOCKHASH,
       });
 
-      for (const call of mock._testCalls.configTransactionCreate) {
-        expect(call.creator.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      for (const call of mock._testCalls.addSignerAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
-      for (const call of mock._testCalls.proposalApprove) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      for (const call of mock._testCalls.addSpendingLimitAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
     });
   });
@@ -540,80 +459,67 @@ describe("txBuilders — sponsor role invariants", () => {
   // agentRevocation
   // =======================================================================
   describe("buildAgentRevocationTxCore", () => {
-    it("uses userWallet as creator/member, sponsor only as rentPayer", () => {
-      buildAgentRevocationTxCore({
+    it("without spending limit: 1 instruction (removeSignerAsAuthority)", () => {
+      const result = buildAgentRevocationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        onchainCreateKey: null,
+        oldSeed: null,
         blockhash: BLOCKHASH,
       });
 
-      const configCalls = mock._testCalls.configTransactionCreate;
-      expectKeyEquals(configCalls[0].creator, USER_WALLET, "config.creator");
-      expectKeyEquals(configCalls[0].rentPayer, SPONSOR_PUBKEY, "config.rentPayer");
-
-      const approveCalls = mock._testCalls.proposalApprove;
-      expectKeyEquals(approveCalls[0].member, USER_WALLET, "approve.member");
+      expect(result.instructions).toHaveLength(1);
+      expect(mock._testCalls.removeSignerAsAuthority).toHaveLength(1);
+      expect(mock._testCalls.removeSpendingLimitAsAuthority).toHaveLength(0);
     });
 
-    it("includes RemoveMember only when no onchainCreateKey", () => {
-      buildAgentRevocationTxCore({
+    it("with spending limit: 2 instructions (removeSignerAsAuthority + removeSpendingLimitAsAuthority)", () => {
+      const OLD_SEED = Keypair.generate().publicKey;
+
+      const result = buildAgentRevocationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        onchainCreateKey: null,
+        oldSeed: OLD_SEED.toBase58(),
         blockhash: BLOCKHASH,
       });
 
-      const configCall = mock._testCalls.configTransactionCreate[0];
-      expect(configCall.actions).toHaveLength(1);
-      expect(configCall.actions[0].__kind).toBe("RemoveMember");
-      expectKeyEquals(configCall.actions[0].oldMember, AGENT_PUBKEY, "oldMember");
+      expect(result.instructions).toHaveLength(2);
+      expect(mock._testCalls.removeSignerAsAuthority).toHaveLength(1);
+      expect(mock._testCalls.removeSpendingLimitAsAuthority).toHaveLength(1);
     });
 
-    it("includes RemoveMember + RemoveSpendingLimit when onchainCreateKey exists", () => {
-      const ON_CHAIN_KEY = Keypair.generate().publicKey;
-
+    it("removeSignerAsAuthority targets agent key", () => {
       buildAgentRevocationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        onchainCreateKey: ON_CHAIN_KEY.toBase58(),
+        oldSeed: null,
         blockhash: BLOCKHASH,
       });
 
-      const configCall = mock._testCalls.configTransactionCreate[0];
-      expect(configCall.actions).toHaveLength(2);
-      expect(configCall.actions[0].__kind).toBe("RemoveMember");
-      expect(configCall.actions[1].__kind).toBe("RemoveSpendingLimit");
+      const call = mock._testCalls.removeSignerAsAuthority[0];
+      expectKeyEquals(call.oldSigner, AGENT_PUBKEY, "oldSigner");
     });
 
-    it("sponsor key never appears as creator or member", () => {
+    it("sponsor never appears as settingsAuthority", () => {
       buildAgentRevocationTxCore({
         userWallet: USER_WALLET,
         sponsorPublicKey: SPONSOR_PUBKEY,
-        multisigPda: MULTISIG_PDA,
+        settingsPda: SETTINGS_PDA,
         agentPubkey: AGENT_PUBKEY,
-        currentTransactionIndex: 5,
-        onchainCreateKey: Keypair.generate().publicKey.toBase58(),
+        oldSeed: Keypair.generate().publicKey.toBase58(),
         blockhash: BLOCKHASH,
       });
 
-      for (const call of mock._testCalls.configTransactionCreate) {
-        expect(call.creator.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      for (const call of mock._testCalls.removeSignerAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
-      for (const call of mock._testCalls.proposalApprove) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
-      }
-      for (const call of mock._testCalls.configTransactionExecute) {
-        expect(call.member.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
+      for (const call of mock._testCalls.removeSpendingLimitAsAuthority) {
+        expect(call.settingsAuthority.toBase58()).not.toBe(SPONSOR_PUBKEY.toBase58());
       }
     });
   });

@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   Connection,
   Keypair,
@@ -47,36 +47,34 @@ export const buildRemoveMemberTx = action({
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
 
-    // Read multisig to get current state
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
+    // Read smart account settings to get current state
+    const settingsAccount =
+      await smartAccount.accounts.Settings.fromAccountAddress(
         connection,
         multisigPda,
       );
 
     // Verify member exists on-chain
-    const memberExists = multisigAccount.members.some(
-      (m: multisig.types.Member) =>
-        m.key.toBase58() === args.memberPublicKey,
+    const memberExists = settingsAccount.signers.some(
+      (s: smartAccount.types.SmartAccountSigner) =>
+        s.key.toBase58() === args.memberPublicKey,
     );
     if (!memberExists) {
-      throw new Error("Member not found in on-chain multisig");
+      throw new Error("Member not found in on-chain smart account");
     }
 
     // Cannot remove last member
-    if (multisigAccount.members.length <= 1) {
+    if (settingsAccount.signers.length <= 1) {
       throw new Error("Cannot remove the last member of the workspace");
     }
 
-    const currentTransactionIndex = Number(multisigAccount.transactionIndex);
     const { blockhash } = await connection.getLatestBlockhash();
 
     const { tx } = buildRemoveMemberTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
-      multisigPda,
+      settingsPda: multisigPda,
       memberToRemove,
-      currentTransactionIndex,
       blockhash,
     });
 
@@ -139,9 +137,9 @@ export const submitRemoveMemberTx = action({
 
     const multisigPda = new PublicKey(workspace.settingsAddress);
 
-    // Read the updated on-chain multisig state
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
+    // Read the updated on-chain smart account state
+    const settingsAccount =
+      await smartAccount.accounts.Settings.fromAccountAddress(
         connection,
         multisigPda,
       );
@@ -150,9 +148,9 @@ export const submitRemoveMemberTx = action({
       internal.internals.workspaceHelpers.reconcileMembersFromOnchain,
       {
         workspaceId: args.workspaceId,
-        onchainMembers: multisigAccount.members.map(
-          (m: multisig.types.Member) => ({
-            walletAddress: m.key.toBase58(),
+        onchainMembers: settingsAccount.signers.map(
+          (s: smartAccount.types.SmartAccountSigner) => ({
+            walletAddress: s.key.toBase58(),
             role: "member" as const,
           }),
         ),

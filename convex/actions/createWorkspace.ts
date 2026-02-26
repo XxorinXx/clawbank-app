@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   Connection,
   Keypair,
@@ -29,7 +29,7 @@ export const buildCreateWorkspaceTx = action({
   handler: async (
     ctx,
     args,
-  ): Promise<{ serializedTx: string; createKey: string }> => {
+  ): Promise<{ serializedTx: string; settingsAddress: string }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthenticated");
 
@@ -73,21 +73,24 @@ export const buildCreateWorkspaceTx = action({
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const createKey = Keypair.generate();
-    const [multisigPda] = multisig.getMultisigPda({
-      createKey: createKey.publicKey,
-    });
 
-    // Squads protocol fee treasury
-    const [programConfigPda] = multisig.getProgramConfigPda({});
+    // Read ProgramConfig to get the next smart account index
+    const [programConfigPda] = smartAccount.getProgramConfigPda({});
     const programConfigInfo = await connection.getAccountInfo(programConfigPda);
     if (!programConfigInfo) {
-      throw new Error("Squads program config not found on-chain");
+      throw new Error("Smart Account program config not found on-chain");
     }
-    const [programConfig] = multisig.accounts.ProgramConfig.fromAccountInfo(
-      programConfigInfo,
-    );
+    const [programConfig] =
+      smartAccount.accounts.ProgramConfig.fromAccountInfo(programConfigInfo);
     const protocolTreasury = programConfig.treasury;
+    const nextAccountIndex = BigInt(
+      programConfig.smartAccountIndex.toString(),
+    );
+
+    // Derive the settings PDA from the next account index
+    const [settingsPda] = smartAccount.getSettingsPda({
+      accountIndex: nextAccountIndex,
+    });
 
     const { blockhash } = await connection.getLatestBlockhash();
 
@@ -95,21 +98,20 @@ export const buildCreateWorkspaceTx = action({
       creatorWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
       walletMemberKeys: walletMembers.map((wm) => new PublicKey(wm.value)),
-      createKeyPublicKey: createKey.publicKey,
-      multisigPda,
+      settingsPda,
       treasury: protocolTreasury,
       blockhash,
     });
 
-    // Partial-sign with sponsor (fee payer) and createKey (ephemeral)
+    // Partial-sign with sponsor (fee payer)
     // User signs on frontend with Privy wallet
-    tx.sign([sponsorKeypair, createKey]);
+    tx.sign([sponsorKeypair]);
 
     const serializedTx = Buffer.from(tx.serialize()).toString("base64");
 
     return {
       serializedTx,
-      createKey: createKey.publicKey.toBase58(),
+      settingsAddress: settingsPda.toBase58(),
     };
   },
 });
@@ -124,7 +126,7 @@ export const submitCreateWorkspaceTx = action({
       }),
     ),
     signedTx: v.string(),
-    createKey: v.string(),
+    settingsAddress: v.string(),
   },
   handler: async (
     ctx,
@@ -156,7 +158,7 @@ export const submitCreateWorkspaceTx = action({
         skipPreflight: false,
       });
     } catch (err: unknown) {
-      throw new Error(`Failed to create multisig on Solana: ${extractErrorMessage(err, "Unknown Solana error")}`);
+      throw new Error(`Failed to create smart account on Solana: ${extractErrorMessage(err, "Unknown Solana error")}`);
     }
 
     try {
@@ -165,16 +167,16 @@ export const submitCreateWorkspaceTx = action({
         "confirmed",
       );
     } catch (err: unknown) {
-      throw new Error(`Multisig transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`);
+      throw new Error(`Smart account transaction failed to confirm: ${extractErrorMessage(err, "Unknown confirmation error")}`);
     }
 
     // On-chain confirmed — now store in DB
-    const createKeyPubkey = new PublicKey(args.createKey);
-    const [multisigPda] = multisig.getMultisigPda({
-      createKey: createKeyPubkey,
+    const settingsPda = new PublicKey(args.settingsAddress);
+    const settingsAddress = settingsPda.toBase58();
+    const [vaultPda] = smartAccount.getSmartAccountPda({
+      settingsPda,
+      accountIndex: 0,
     });
-    const settingsAddress = multisigPda.toBase58();
-    const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
     const vaultAddress = vaultPda.toBase58();
 
     const walletMembers = args.members.filter((m) => m.type === "wallet");

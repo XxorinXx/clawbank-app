@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   Connection,
   Keypair,
@@ -33,7 +33,7 @@ export const buildAgentActivationTx = action({
     );
     if (!user) throw new Error("User not found");
 
-    // Load workspace for multisig PDA
+    // Load workspace for settings PDA
     const workspace = await ctx.runQuery(
       internal.internals.workspaceHelpers.getWorkspaceById,
       { workspaceId: args.workspaceId },
@@ -72,21 +72,19 @@ export const buildAgentActivationTx = action({
     const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);
 
-    // Read current multisig transaction index
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
+    // Read current smart account settings
+    const settingsAccount =
+      await smartAccount.accounts.Settings.fromAccountAddress(
         connection,
         multisigPda,
       );
-    const currentTransactionIndex = Number(multisigAccount.transactionIndex);
 
-    // Guard: if agent is already an on-chain member, don't add again
-    const agentAlreadyMember = multisigAccount.members.some(
-      (m: multisig.types.Member) =>
-        m.key.toBase58() === agentPubkey.toBase58(),
+    // Guard: if agent is already an on-chain signer, don't add again
+    const agentAlreadySigner = settingsAccount.signers.some(
+      (s: { key: PublicKey }) => s.key.toBase58() === agentPubkey.toBase58(),
     );
-    if (agentAlreadyMember) {
-      throw new Error("Agent is already an on-chain multisig member");
+    if (agentAlreadySigner) {
+      throw new Error("Agent is already an on-chain smart account signer");
     }
 
     // Generate createKey for spending limit PDA
@@ -102,10 +100,9 @@ export const buildAgentActivationTx = action({
     const { tx } = buildAgentActivationTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
-      multisigPda,
+      settingsPda: multisigPda,
       agentPubkey,
-      currentTransactionIndex,
-      createKeyPublicKey: createKey.publicKey,
+      seed: createKey.publicKey,
       tokenMint: tokenMintPubkey,
       limitAmount: limit.limitAmount,
       decimals,
