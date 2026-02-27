@@ -11,6 +11,7 @@ import { RequestDetailModal, type PendingRequest } from "./RequestDetailModal";
 import { useSignTransaction } from "~/hooks/useSignTransaction";
 import { useTokenPrices } from "~/hooks/useTokenPrices";
 import { formatRelativeTime, formatSol, formatLamportsAsUsd } from "~/utils/format";
+import { getProgramName } from "~/utils/programs";
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 
@@ -90,6 +91,13 @@ export function RequestsTab({ workspaceId }: RequestsTabProps) {
         {requests.map((req) => {
           const isThisProcessing = processingId === req._id;
           const thisAction = isThisProcessing ? processingAction : null;
+          const isExecute = req.metadata?.type === "execute";
+          const meta = isExecute ? (req.metadata as {
+            type: "execute";
+            instructionCount: number;
+            programs: string[];
+            estimatedValueSol?: number;
+          }) : null;
 
           return (
             <div
@@ -100,21 +108,56 @@ export function RequestsTab({ workspaceId }: RequestsTabProps) {
                 {/* Left: info */}
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-gray-900">
-                      {solPrice > 0
-                        ? formatLamportsAsUsd(req.amountLamports, solPrice)
-                        : `${formatSol(req.amountLamports)} SOL`}
-                    </span>
-                    {solPrice > 0 && (
-                      <span className="text-xs text-gray-400">
-                        {formatSol(req.amountLamports)} SOL
-                      </span>
+                    {isExecute && meta ? (
+                      <>
+                        <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                          Execute
+                        </span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {meta.estimatedValueSol != null && solPrice > 0
+                            ? `~$${(meta.estimatedValueSol * solPrice).toFixed(2)}`
+                            : meta.estimatedValueSol != null
+                              ? `~${meta.estimatedValueSol} SOL`
+                              : `${meta.instructionCount} ix`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {solPrice > 0
+                            ? formatLamportsAsUsd(req.amountLamports, solPrice)
+                            : `${formatSol(req.amountLamports)} SOL`}
+                        </span>
+                        {solPrice > 0 && (
+                          <span className="text-xs text-gray-400">
+                            {formatSol(req.amountLamports)} SOL
+                          </span>
+                        )}
+                      </>
                     )}
                     <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600">
                       <Bot size={10} />
                       {req.agentName}
                     </span>
                   </div>
+                  {isExecute && meta && meta.programs.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {meta.programs.slice(0, 3).map((pid) => (
+                        <span
+                          key={pid}
+                          className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500"
+                          title={pid}
+                        >
+                          {getProgramName(pid)}
+                        </span>
+                      ))}
+                      {meta.programs.length > 3 && (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-400">
+                          +{meta.programs.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {req.shortNote && (
                     <span className="truncate text-xs text-gray-400">
                       {req.shortNote.length > 80

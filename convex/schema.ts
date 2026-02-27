@@ -15,6 +15,7 @@ export default defineSchema({
     vaultAddress: v.string(),
     creatorTokenIdentifier: v.string(),
     createdAt: v.number(),
+    programAllowlist: v.optional(v.array(v.string())),
   })
     .index("by_creator", ["creatorTokenIdentifier"])
     .index("by_settings", ["settingsAddress"]),
@@ -136,6 +137,7 @@ export default defineSchema({
     proposalAddress: v.optional(v.string()),
     proposalIndex: v.optional(v.number()),
     errorMessage: v.optional(v.string()),
+    metadata: v.optional(v.any()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
