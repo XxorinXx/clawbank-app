@@ -189,250 +189,28 @@ export const agentExecute = action({
       estimatedValueSol: args.estimatedValueSol,
     };
 
-    if (allowed) {
-      return await executeUnderLimit(ctx, {
-        agentId,
-        workspaceId: agent.workspaceId,
-        note,
-        desc,
-        snapshot,
-        solLimit: solLimit!,
-        connection,
-        settingsPda,
-        smartAccountPda,
-        agentPubkey,
-        sponsorKeypair,
-        txInstructions,
-        estimatedValueSol: args.estimatedValueSol,
-        agent,
-        metadata,
-      });
-    } else {
-      return await createProposal(ctx, {
-        agentId,
-        workspaceId: agent.workspaceId,
-        note,
-        desc,
-        snapshot,
-        connection,
-        settingsPda,
-        smartAccountPda,
-        agentPubkey,
-        sponsorKeypair,
-        txInstructions,
-        estimatedValueSol: args.estimatedValueSol,
-        metadata,
-      });
-    }
+    // Arbitrary instructions always require human approval via proposal.
+    // The spending limit check determines if the request is flagged as
+    // "within_budget" (informational) — the human still approves either way.
+    return await createProposal(ctx, {
+      agentId,
+      workspaceId: agent.workspaceId,
+      note,
+      desc,
+      snapshot,
+      connection,
+      settingsPda,
+      smartAccountPda,
+      agentPubkey,
+      sponsorKeypair,
+      txInstructions,
+      estimatedValueSol: args.estimatedValueSol,
+      metadata: { ...metadata, withinBudget: allowed },
+    });
   },
 });
 
-// ── Under-limit: build vault tx, create + approve + execute proposal ──────
-
-interface UnderLimitParams {
-  agentId: Id<"agents">;
-  workspaceId: Id<"workspaces">;
-  note: string;
-  desc: string;
-  snapshot: { limitAmount: number; spentAmount: number; periodType: string };
-  solLimit: { onchainCreateKey?: string; tokenMint: string };
-  connection: Connection;
-  settingsPda: PublicKey;
-  smartAccountPda: PublicKey;
-  agentPubkey: PublicKey;
-  sponsorKeypair: Keypair;
-  txInstructions: InstanceType<typeof import("@solana/web3.js").TransactionInstruction>[];
-  estimatedValueSol: number;
-  agent: { publicKey?: string };
-  metadata: {
-    type: "execute";
-    instructionCount: number;
-    programs: string[];
-    estimatedValueSol: number;
-  };
-}
-
-async function executeUnderLimit(
-  ctx: ActionCtx,
-  p: UnderLimitParams,
-): Promise<ExecuteResult> {
-  const requestId = await ctx.runMutation(
-    internal.internals.transferHelpers.createTransferRequest,
-    {
-      agentId: p.agentId,
-      workspaceId: p.workspaceId,
-      recipient: p.smartAccountPda.toBase58(), // vault itself for execute requests
-      amountLamports: solToLamports(p.estimatedValueSol),
-      shortNote: p.note,
-      description: p.desc,
-      status: "pending_execution" as const,
-      spendingLimitSnapshot: p.snapshot,
-      metadata: p.metadata,
-    },
-  );
-
-  try {
-    // Read Settings to get next transactionIndex
-    const settingsAccount =
-      await smartAccount.accounts.Settings.fromAccountAddress(
-        p.connection,
-        p.settingsPda,
-      );
-    const nextTransactionIndex = BigInt(
-      Number(settingsAccount.transactionIndex) + 1,
-    );
-
-    // Build vault transaction message with the agent's instructions
-    const vaultTxMessage = new TransactionMessage({
-      payerKey: p.smartAccountPda,
-      recentBlockhash: PublicKey.default.toBase58(),
-      instructions: p.txInstructions,
-    });
-
-    // Create vault transaction
-    const txCreateIx = smartAccount.instructions.createTransaction({
-      settingsPda: p.settingsPda,
-      transactionIndex: nextTransactionIndex,
-      creator: p.agentPubkey,
-      rentPayer: p.sponsorKeypair.publicKey,
-      accountIndex: 0,
-      ephemeralSigners: 0,
-      transactionMessage: vaultTxMessage,
-    });
-
-    // Create proposal (active, so signers can vote immediately)
-    const proposalCreateIx = smartAccount.instructions.createProposal({
-      settingsPda: p.settingsPda,
-      transactionIndex: nextTransactionIndex,
-      creator: p.agentPubkey,
-      rentPayer: p.sponsorKeypair.publicKey,
-    });
-
-    // Approve proposal (sponsor is a member with all permissions)
-    const approveIx = smartAccount.instructions.approveProposal({
-      settingsPda: p.settingsPda,
-      transactionIndex: nextTransactionIndex,
-      signer: p.sponsorKeypair.publicKey,
-    });
-
-    // Execute the vault transaction
-    const executeResult = await smartAccount.instructions.executeTransaction({
-      connection: p.connection,
-      settingsPda: p.settingsPda,
-      transactionIndex: nextTransactionIndex,
-      signer: p.sponsorKeypair.publicKey,
-    });
-
-    const { blockhash, lastValidBlockHeight } =
-      await p.connection.getLatestBlockhash("confirmed");
-
-    const messageV0 = new TransactionMessage({
-      payerKey: p.sponsorKeypair.publicKey,
-      recentBlockhash: blockhash,
-      instructions: [txCreateIx, proposalCreateIx, approveIx, executeResult.instruction],
-    }).compileToV0Message();
-
-    const tx = new VersionedTransaction(messageV0);
-
-    // Sign with sponsor (fee payer)
-    tx.sign([p.sponsorKeypair]);
-
-    // Sign with agent via Turnkey
-    const signedTx = await signWithTurnkey(tx, p.agent.publicKey!);
-
-    const signature = await p.connection.sendTransaction(signedTx, {
-      skipPreflight: false,
-    });
-
-    await p.connection.confirmTransaction(
-      { signature, blockhash, lastValidBlockHeight },
-      "confirmed",
-    );
-
-    // Update request to executed
-    await ctx.runMutation(
-      internal.internals.transferHelpers.updateTransferRequestStatus,
-      {
-        requestId,
-        status: "executed" as const,
-        txSignature: signature,
-      },
-    );
-
-    // Update spent amount (DB stores in SOL)
-    await ctx.runMutation(
-      internal.internals.transferHelpers.updateSpentAmount,
-      {
-        agentId: p.agentId,
-        tokenMint: NATIVE_SOL_MINT,
-        additionalSpent: p.estimatedValueSol,
-      },
-    );
-
-    // Log activity
-    const [agentForLog, solPrices] = await Promise.all([
-      ctx.runQuery(internal.internals.agentHelpers.getAgentById, {
-        agentId: p.agentId,
-      }),
-      ctx.runAction(internal.actions.fetchTokenPrices.fetchTokenPrices, {
-        mints: [NATIVE_SOL_MINT],
-      }),
-    ]);
-    const solPrice = solPrices[0]?.priceUsd ?? 0;
-    const usdValue = p.estimatedValueSol * solPrice;
-    await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
-      workspaceId: p.workspaceId,
-      agentId: p.agentId,
-      actorType: "agent",
-      actorLabel: agentForLog?.name ?? "Unknown Agent",
-      category: "transaction",
-      action: "execute_completed",
-      txSignature: signature,
-      amount: solToLamports(p.estimatedValueSol),
-      tokenMint: NATIVE_SOL_MINT,
-      metadata: {
-        programs: p.metadata.programs,
-        instructionCount: p.metadata.instructionCount,
-        usdValue,
-      },
-    });
-
-    return {
-      requestId: requestId as string,
-      status: "executed",
-      txSignature: signature,
-    };
-  } catch (err: unknown) {
-    const errorMsg = extractErrorMessage(err);
-
-    await ctx.runMutation(
-      internal.internals.transferHelpers.updateTransferRequestStatus,
-      {
-        requestId,
-        status: "failed" as const,
-        errorMessage: errorMsg,
-      },
-    );
-
-    const agentForFailLog = await ctx.runQuery(
-      internal.internals.agentHelpers.getAgentById,
-      { agentId: p.agentId },
-    );
-    await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
-      workspaceId: p.workspaceId,
-      agentId: p.agentId,
-      actorType: "agent",
-      actorLabel: agentForFailLog?.name ?? "Unknown Agent",
-      category: "transaction",
-      action: "execute_failed",
-      metadata: { error: errorMsg },
-    });
-
-    throw new Error(`Execute failed: ${errorMsg}`);
-  }
-}
-
-// ── Over-limit: create vault tx + proposal, human approves later ──────────
+// ── Create vault tx + proposal — human approves later ──────────────────────
 
 interface ProposalParams {
   agentId: Id<"agents">;
@@ -452,6 +230,7 @@ interface ProposalParams {
     instructionCount: number;
     programs: string[];
     estimatedValueSol: number;
+    withinBudget?: boolean;
   };
 }
 
