@@ -205,6 +205,62 @@ http.route({
   }),
 });
 
+// ── POST /agent/execute ─────────────────────────────────────────────────
+
+http.route({
+  path: "/agent/execute",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      await authenticateRequest(ctx, request, "/agent/execute");
+
+      const body = await request.json();
+      const { instructions, shortNote, description, estimatedValueSol } = body;
+
+      if (!instructions || !shortNote || estimatedValueSol === undefined) {
+        return errorResponse(
+          "instructions, shortNote, and estimatedValueSol required",
+        );
+      }
+
+      const authHeader = request.headers.get("Authorization") ?? "";
+      let sessionToken: string;
+      if (authHeader.startsWith("DPoP ")) {
+        sessionToken = authHeader.slice(5);
+      } else if (authHeader.startsWith("Bearer ")) {
+        sessionToken = authHeader.slice(7);
+      } else {
+        sessionToken = authHeader;
+      }
+
+      const result = await ctx.runAction(
+        api.actions.agentExecute.agentExecute,
+        {
+          sessionToken,
+          instructions,
+          shortNote,
+          description: description ?? shortNote,
+          estimatedValueSol,
+        },
+      );
+
+      return jsonResponse(result);
+    } catch (e) {
+      const message = (e as Error).message;
+      if (message.includes("Invalid") || message.includes("expired")) {
+        return errorResponse(message, 401);
+      }
+      if (message.includes("not active")) {
+        return errorResponse(message, 403);
+      }
+      if (message.includes("Rate limit")) {
+        return errorResponse(message, 429);
+      }
+      return errorResponse(message, 400);
+    }
+  }),
+});
+
 // ── POST /agent/status ──────────────────────────────────────────────────
 
 http.route({

@@ -19,6 +19,7 @@ export const createTransferRequest = internalMutation({
       spentAmount: v.number(),
       periodType: v.string(),
     }),
+    metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -31,6 +32,7 @@ export const createTransferRequest = internalMutation({
       description: args.description,
       status: args.status,
       spendingLimitSnapshot: args.spendingLimitSnapshot,
+      metadata: args.metadata,
       createdAt: now,
       updatedAt: now,
     });

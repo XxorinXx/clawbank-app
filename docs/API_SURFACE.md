@@ -124,6 +124,64 @@ X-DPoP: <dpop-proof-jwt>            (required for v2)
 
 ---
 
+## `POST /agent/execute`
+
+Execute arbitrary Solana instructions through the vault. Within spending limit: auto-executes via Squads vault transaction. Over limit: creates a proposal for human approval.
+
+**Headers:**
+```
+Authorization: DPoP <access-token>   (or "Bearer <token>" for v1)
+X-DPoP: <dpop-proof-jwt>            (required for v2)
+```
+
+**Request:**
+```json
+{
+  "instructions": [
+    {
+      "programId": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+      "keys": [
+        { "pubkey": "VAULT_PDA", "isSigner": false, "isWritable": true },
+        { "pubkey": "base58-address", "isSigner": false, "isWritable": false }
+      ],
+      "data": "base64-encoded-instruction-data"
+    }
+  ],
+  "shortNote": "Swap 0.5 SOL for USDC (1-80 chars)",
+  "description": "Jupiter swap via SOL/USDC route",
+  "estimatedValueSol": 0.5
+}
+```
+
+- `instructions`: Array of 1-5 Solana instructions. Use `"VAULT_PDA"` as a placeholder for the vault address (auto-replaced).
+- `shortNote`: 1-80 character summary.
+- `description`: Full description (non-empty). Defaults to `shortNote` if omitted.
+- `estimatedValueSol`: Estimated SOL value of the transaction (for spending limit check). Must be >= 0.
+
+**Program allowlist:** Only instructions targeting allowed programs are accepted. Default allowlist: System Program, Token Program, Associated Token Program, Jupiter v6, Compute Budget.
+
+**Response (executed -- within limit):**
+```json
+{
+  "requestId": "convex-id",
+  "status": "executed",
+  "txSignature": "base58-signature"
+}
+```
+
+**Response (pending -- over limit):**
+```json
+{
+  "requestId": "convex-id",
+  "status": "pending_approval",
+  "proposalAddress": "base58-squads-proposal-pda"
+}
+```
+
+**Errors:** `400` (validation, disallowed program, instruction limit), `401` (auth), `403` (inactive agent), `429` (rate limit)
+
+---
+
 ## `POST /agent/status`
 
 Get agent status and spending limits.

@@ -18,6 +18,7 @@ import {
   formatSol,
   formatLamportsAsUsd,
 } from "~/utils/format";
+import { getProgramName } from "~/utils/programs";
 
 export interface PendingRequest {
   _id: string;
@@ -37,6 +38,12 @@ export interface PendingRequest {
   proposalAddress?: string;
   proposalIndex?: number;
   errorMessage?: string;
+  metadata?: {
+    type: "execute";
+    instructionCount: number;
+    programs: string[];
+    estimatedValueSol?: number;
+  };
   createdAt: number;
   updatedAt: number;
   agentName: string;
@@ -126,6 +133,7 @@ export function RequestDetailModal({
     ? Math.min(100, (spending.spentAmount / spending.limitAmount) * 100)
     : 0;
 
+  const isExecuteRequest = request?.metadata?.type === "execute";
   const isProcessing = processingAction !== null;
 
   return (
@@ -168,16 +176,32 @@ export function RequestDetailModal({
             <div className="px-6 py-7">
               {/* Header */}
               <div className="mb-6 flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <div
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                    isExecuteRequest
+                      ? "bg-purple-50 text-purple-600"
+                      : "bg-blue-50 text-blue-600",
+                  )}
+                >
                   <ArrowUpRight size={20} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="text-base font-semibold text-gray-900">
-                    Transfer{" "}
-                    {solPriceUsd > 0
-                      ? formatLamportsAsUsd(request.amountLamports, solPriceUsd)
-                      : `${formatSol(request.amountLamports)} SOL`}
+                    {isExecuteRequest ? "Execute" : "Transfer"}{" "}
+                    {isExecuteRequest && request.metadata?.estimatedValueSol != null
+                      ? solPriceUsd > 0
+                        ? `~$${(request.metadata.estimatedValueSol * solPriceUsd).toFixed(2)}`
+                        : `~${request.metadata.estimatedValueSol} SOL`
+                      : solPriceUsd > 0
+                        ? formatLamportsAsUsd(request.amountLamports, solPriceUsd)
+                        : `${formatSol(request.amountLamports)} SOL`}
                   </h3>
+                  {isExecuteRequest && (
+                    <span className="mt-0.5 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                      Execute
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -221,6 +245,32 @@ export function RequestDetailModal({
                   )}
                 </div>
               </div>
+
+              {/* Execute details: instruction count + programs */}
+              {isExecuteRequest && request.metadata && (
+                <div className="mb-5">
+                  <span className="mb-1 block text-xs font-medium text-gray-400">
+                    Transaction
+                  </span>
+                  <span className="text-sm text-gray-900">
+                    {request.metadata.instructionCount} instruction
+                    {request.metadata.instructionCount !== 1 ? "s" : ""}
+                  </span>
+                  {request.metadata.programs.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {request.metadata.programs.map((pid) => (
+                        <span
+                          key={pid}
+                          className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-medium text-gray-600"
+                          title={pid}
+                        >
+                          {getProgramName(pid)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Timestamps */}
               <div className="mb-5">

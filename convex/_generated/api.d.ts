@@ -9,6 +9,7 @@
  */
 
 import type * as actions_agentAuth from "../actions/agentAuth.js";
+import type * as actions_agentExecute from "../actions/agentExecute.js";
 import type * as actions_agentRefresh from "../actions/agentRefresh.js";
 import type * as actions_agentTransfer from "../actions/agentTransfer.js";
 import type * as actions_buildAgentActivationTx from "../actions/buildAgentActivationTx.js";
@@ -40,6 +41,7 @@ import type * as lib_authMiddleware from "../lib/authMiddleware.js";
 import type * as lib_connectCode from "../lib/connectCode.js";
 import type * as lib_dpop from "../lib/dpop.js";
 import type * as lib_rateLimit from "../lib/rateLimit.js";
+import type * as lib_instructionValidator from "../lib/instructionValidator.js";
 import type * as lib_spendingLimitPolicy from "../lib/spendingLimitPolicy.js";
 import type * as lib_turnkeyHelpers from "../lib/turnkeyHelpers.js";
 import type * as lib_txBuilders from "../lib/txBuilders.js";
@@ -59,6 +61,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/agentAuth": typeof actions_agentAuth;
+  "actions/agentExecute": typeof actions_agentExecute;
   "actions/agentRefresh": typeof actions_agentRefresh;
   "actions/agentTransfer": typeof actions_agentTransfer;
   "actions/buildAgentActivationTx": typeof actions_buildAgentActivationTx;
@@ -90,6 +93,7 @@ declare const fullApi: ApiFromModules<{
   "lib/connectCode": typeof lib_connectCode;
   "lib/dpop": typeof lib_dpop;
   "lib/rateLimit": typeof lib_rateLimit;
+  "lib/instructionValidator": typeof lib_instructionValidator;
   "lib/spendingLimitPolicy": typeof lib_spendingLimitPolicy;
   "lib/turnkeyHelpers": typeof lib_turnkeyHelpers;
   "lib/txBuilders": typeof lib_txBuilders;
