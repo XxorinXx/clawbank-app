@@ -11,13 +11,13 @@ export default defineSchema({
 
   workspaces: defineTable({
     name: v.string(),
-    multisigAddress: v.string(),
+    settingsAddress: v.string(),
     vaultAddress: v.string(),
     creatorTokenIdentifier: v.string(),
     createdAt: v.number(),
   })
     .index("by_creator", ["creatorTokenIdentifier"])
-    .index("by_multisig", ["multisigAddress"]),
+    .index("by_settings", ["settingsAddress"]),
 
   workspace_members: defineTable({
     workspaceId: v.id("workspaces"),
@@ -144,7 +144,16 @@ export default defineSchema({
 
   activity_log: defineTable({
     workspaceId: v.id("workspaces"),
-    agentId: v.id("agents"),
+    agentId: v.optional(v.id("agents")),
+    actorType: v.optional(v.union(v.literal("agent"), v.literal("human"))),
+    actorLabel: v.optional(v.string()),
+    category: v.optional(
+      v.union(
+        v.literal("transaction"),
+        v.literal("config"),
+        v.literal("agent_lifecycle"),
+      ),
+    ),
     action: v.string(),
     txSignature: v.optional(v.string()),
     amount: v.optional(v.number()),

@@ -10,13 +10,18 @@
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "clawbank:connect": "node scripts/agent-connect.mjs"
+    "test:e2e": "npx playwright test --project=chromium",
+    "test:e2e:headed": "npx playwright test --project=chromium --headed",
+    "test:e2e:login": "npx playwright test --project=setup --headed",
+    "test:e2e:report": "npx playwright show-report e2e/playwright-report",
+    "clawbank:connect": "node scripts/agent-connect.mjs",
+    "postinstall": "node scripts/patch-smart-account-exports.mjs"
   },
   "dependencies": {
     "@privy-io/react-auth": "^2.25.0",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.98.4",
-    "@sqds/multisig": "^2.1.3",
+    "@sqds/smart-account": "file:../../../../../private/tmp/sqds-smart-account/sdk/smart-account",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.87.0",
     "@turnkey/api-key-stamper": "^0.6.1",
@@ -31,6 +36,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.1.0",
     "@tanstack/router-plugin": "^1.87.0",
     "@types/react": "^18.3.18",

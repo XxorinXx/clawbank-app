@@ -117,12 +117,12 @@ export function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspaceModalPr
     const success = await tx.execute({
       build: () =>
         buildCreateWorkspaceTx({ name: trimmedName, members: memberArgs }),
-      submit: ({ signedTx, createKey }) =>
+      submit: ({ signedTx, settingsAddress }) =>
         submitCreateWorkspaceTx({
           name: trimmedName,
           members: memberArgs,
           signedTx,
-          createKey: createKey!,
+          settingsAddress: settingsAddress!,
         }),
     });
 

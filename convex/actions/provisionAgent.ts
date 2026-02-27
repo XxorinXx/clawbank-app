@@ -63,6 +63,9 @@ export const provisionAgent = internalAction({
       await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
         workspaceId: agent.workspaceId,
         agentId: args.agentId,
+        actorType: "human",
+        actorLabel: agent.name,
+        category: "agent_lifecycle",
         action: "provision_failed",
         metadata: { error: errorMsg },
       });
@@ -103,6 +106,9 @@ export const provisionAgent = internalAction({
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: agent.workspaceId,
       agentId: args.agentId,
+      actorType: "human",
+      actorLabel: agent.name,
+      category: "agent_lifecycle",
       action: "agent_created",
     });
   },

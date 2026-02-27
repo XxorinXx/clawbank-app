@@ -3,7 +3,6 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
 import {
   Connection,
   Keypair,
@@ -69,18 +68,10 @@ export const buildSpendingLimitUpdateTx = action({
     const decimals = tokenMeta?.decimals ?? 9;
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const multisigPda = new PublicKey(workspace.settingsAddress);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const agentPubkey = new PublicKey(agent.publicKey);
     const userWallet = new PublicKey(user.walletAddress);
-
-    const multisigAccount =
-      await multisig.accounts.Multisig.fromAccountAddress(
-        connection,
-        multisigPda,
-      );
-
-    const currentTransactionIndex = Number(multisigAccount.transactionIndex);
 
     const createKey = Keypair.generate();
     const { blockhash } = await connection.getLatestBlockhash();
@@ -88,11 +79,10 @@ export const buildSpendingLimitUpdateTx = action({
     const { tx } = buildSpendingLimitUpdateTxCore({
       userWallet,
       sponsorPublicKey: sponsorKeypair.publicKey,
-      multisigPda,
+      settingsPda: multisigPda,
       agentPubkey,
-      currentTransactionIndex,
-      oldOnchainCreateKey: oldOnchainCreateKey ?? null,
-      createKeyPublicKey: createKey.publicKey,
+      oldSeed: oldOnchainCreateKey ?? null,
+      seed: createKey.publicKey,
       tokenMint: args.tokenMint === NATIVE_SOL_MINT
         ? PublicKey.default
         : new PublicKey(args.tokenMint),
@@ -178,7 +168,10 @@ export const submitSpendingLimitUpdateTx = action({
     await ctx.runMutation(internal.internals.agentHelpers.logActivity, {
       workspaceId: args.workspaceId,
       agentId: args.agentId,
-      action: "limit_updated_onchain",
+      actorType: "human",
+      actorLabel: identity.email ?? "Unknown",
+      category: "config",
+      action: "spending_limit_updated",
       txSignature: signature,
     });
 

@@ -68,7 +68,7 @@ export function DeleteMemberModal({
           <span className="font-mono font-semibold text-gray-700">
             {memberAddress ? truncateAddress(memberAddress, 6) : ''}
           </span>{' '}
-          from the workspace multisig. This action cannot be undone.
+          from the workspace smart account. This action cannot be undone.
         </p>
 
         {tx.error && (

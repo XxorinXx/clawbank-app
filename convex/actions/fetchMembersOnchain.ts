@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getRpcUrl } from "../env";
 
@@ -33,20 +33,20 @@ export const fetchMembersOnchain = action({
     }
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const settingsPda = new PublicKey(workspace.settingsAddress);
 
-    const multisigAccount = await multisig.accounts.Multisig.fromAccountAddress(
+    const settingsAccount = await smartAccount.accounts.Settings.fromAccountAddress(
       connection,
-      multisigPda,
+      settingsPda,
     );
 
-    const members: OnchainMember[] = multisigAccount.members.map(
-      (m: multisig.types.Member) => ({
-        pubkey: m.key.toBase58(),
+    const members: OnchainMember[] = settingsAccount.signers.map(
+      (s: smartAccount.types.SmartAccountSigner) => ({
+        pubkey: s.key.toBase58(),
         permissions: {
-          initiate: (m.permissions.mask & multisig.types.Permission.Initiate) !== 0,
-          vote: (m.permissions.mask & multisig.types.Permission.Vote) !== 0,
-          execute: (m.permissions.mask & multisig.types.Permission.Execute) !== 0,
+          initiate: (s.permissions.mask & smartAccount.types.Permission.Initiate) !== 0,
+          vote: (s.permissions.mask & smartAccount.types.Permission.Vote) !== 0,
+          execute: (s.permissions.mask & smartAccount.types.Permission.Execute) !== 0,
         },
       }),
     );

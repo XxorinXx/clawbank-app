@@ -65,7 +65,14 @@ export const insertAgentSession = internalMutation({
 export const logActivity = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
-    agentId: v.id("agents"),
+    agentId: v.optional(v.id("agents")),
+    actorType: v.union(v.literal("agent"), v.literal("human")),
+    actorLabel: v.string(),
+    category: v.union(
+      v.literal("transaction"),
+      v.literal("config"),
+      v.literal("agent_lifecycle"),
+    ),
     action: v.string(),
     txSignature: v.optional(v.string()),
     amount: v.optional(v.number()),
@@ -76,6 +83,9 @@ export const logActivity = internalMutation({
     await ctx.db.insert("activity_log", {
       workspaceId: args.workspaceId,
       agentId: args.agentId,
+      actorType: args.actorType,
+      actorLabel: args.actorLabel,
+      category: args.category,
       action: args.action,
       txSignature: args.txSignature,
       amount: args.amount,
@@ -278,11 +288,21 @@ export const updateSpendingLimitRecord = internalMutation({
       });
     }
 
-    // Log activity
+    // Log activity — resolve agent name for actorLabel
+    const agentRecord = await ctx.db.get(args.agentId);
     await ctx.db.insert("activity_log", {
       workspaceId: args.workspaceId,
       agentId: args.agentId,
-      action: "limit_updated",
+      actorType: "human",
+      actorLabel: "System",
+      category: "config",
+      action: "spending_limit_updated",
+      metadata: {
+        agentName: agentRecord?.name ?? "Unknown Agent",
+        tokenMint: args.tokenMint,
+        limitAmount: args.limitAmount,
+        periodType: args.periodType,
+      },
       timestamp: Date.now(),
     });
   },

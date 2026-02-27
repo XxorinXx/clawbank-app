@@ -44,6 +44,7 @@ import type * as lib_spendingLimitPolicy from "../lib/spendingLimitPolicy.js";
 import type * as lib_turnkeyHelpers from "../lib/turnkeyHelpers.js";
 import type * as lib_txBuilders from "../lib/txBuilders.js";
 import type * as mutations_agents from "../mutations/agents.js";
+import type * as queries_activityLog from "../queries/activityLog.js";
 import type * as queries_agents from "../queries/agents.js";
 import type * as queries_getWorkspaceMembers from "../queries/getWorkspaceMembers.js";
 import type * as queries_listUserWorkspaces from "../queries/listUserWorkspaces.js";
@@ -93,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   "lib/turnkeyHelpers": typeof lib_turnkeyHelpers;
   "lib/txBuilders": typeof lib_txBuilders;
   "mutations/agents": typeof mutations_agents;
+  "queries/activityLog": typeof queries_activityLog;
   "queries/agents": typeof queries_agents;
   "queries/getWorkspaceMembers": typeof queries_getWorkspaceMembers;
   "queries/listUserWorkspaces": typeof queries_listUserWorkspaces;

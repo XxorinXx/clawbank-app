@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { v } from "convex/values";
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   Connection,
   Keypair,
@@ -55,21 +55,21 @@ export const buildApproveTransferRequest = action({
     if (!workspace) throw new Error("Workspace not found");
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const settingsPda = new PublicKey(workspace.settingsAddress);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
 
-    const approveIx = multisig.instructions.proposalApprove({
-      multisigPda,
+    const approveIx = smartAccount.instructions.approveProposal({
+      settingsPda,
       transactionIndex: BigInt(request.proposalIndex),
-      member: userWallet,
+      signer: userWallet,
     });
 
-    const executeResult = await multisig.instructions.vaultTransactionExecute({
+    const executeResult = await smartAccount.instructions.executeTransaction({
       connection,
-      multisigPda,
+      settingsPda,
       transactionIndex: BigInt(request.proposalIndex),
-      member: userWallet,
+      signer: userWallet,
     });
 
     const { blockhash } = await connection.getLatestBlockhash();
@@ -209,14 +209,14 @@ export const denyTransferRequest = action({
     if (!workspace) throw new Error("Workspace not found");
 
     const connection = new Connection(getRpcUrl(), "confirmed");
-    const multisigPda = new PublicKey(workspace.multisigAddress);
+    const settingsPda = new PublicKey(workspace.settingsAddress);
     const sponsorKeypair = Keypair.fromSecretKey(getSponsorKey());
     const userWallet = new PublicKey(user.walletAddress);
 
-    const rejectIx = multisig.instructions.proposalReject({
-      multisigPda,
+    const rejectIx = smartAccount.instructions.rejectProposal({
+      settingsPda,
       transactionIndex: BigInt(request.proposalIndex),
-      member: userWallet,
+      signer: userWallet,
     });
 
     const { blockhash } = await connection.getLatestBlockhash();

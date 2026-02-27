@@ -1,10 +1,10 @@
-import * as multisig from "@sqds/multisig";
+import * as smartAccount from "@sqds/smart-account";
 import {
   PublicKey,
+  TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
-import BN from "bn.js";
 
 // ---------------------------------------------------------------------------
 // createWorkspace
@@ -14,42 +14,48 @@ export interface BuildCreateWorkspaceParams {
   creatorWallet: PublicKey;
   sponsorPublicKey: PublicKey;
   walletMemberKeys: PublicKey[];
-  createKeyPublicKey: PublicKey;
-  multisigPda: PublicKey;
+  settingsPda?: PublicKey;
   treasury: PublicKey;
   blockhash: string;
 }
 
 export interface CreateWorkspaceResult {
-  members: multisig.types.Member[];
+  signers: smartAccount.types.SmartAccountSigner[];
   tx: VersionedTransaction;
 }
 
 export function buildCreateWorkspaceTxCore(
   params: BuildCreateWorkspaceParams,
 ): CreateWorkspaceResult {
-  const members: multisig.types.Member[] = [
-    { key: params.creatorWallet, permissions: multisig.types.Permissions.all() },
+  const signers: smartAccount.types.SmartAccountSigner[] = [
+    { key: params.creatorWallet, permissions: smartAccount.types.Permissions.all() },
     ...params.walletMemberKeys.map((key) => ({
       key,
-      permissions: multisig.types.Permissions.all(),
+      permissions: smartAccount.types.Permissions.all(),
     })),
   ];
 
-  const tx = multisig.transactions.multisigCreateV2({
-    blockhash: params.blockhash,
+  // Use instruction (not transaction) so we control the fee payer (sponsor)
+  const createIx = smartAccount.instructions.createSmartAccount({
     treasury: params.treasury,
-    createKey: params.createKeyPublicKey,
     creator: params.creatorWallet,
-    multisigPda: params.multisigPda,
-    configAuthority: null,
+    settings: params.settingsPda,
+    settingsAuthority: params.creatorWallet,
     threshold: 1,
-    members,
+    signers,
     timeLock: 0,
     rentCollector: null,
   });
 
-  return { members, tx };
+  const messageV0 = new TransactionMessage({
+    payerKey: params.sponsorPublicKey,
+    recentBlockhash: params.blockhash,
+    instructions: [createIx],
+  }).compileToV0Message();
+
+  const tx = new VersionedTransaction(messageV0);
+
+  return { signers, tx };
 }
 
 // ---------------------------------------------------------------------------
@@ -58,25 +64,24 @@ export function buildCreateWorkspaceTxCore(
 
 function mapPeriod(
   periodType: "daily" | "weekly" | "monthly",
-): multisig.types.Period {
+): smartAccount.types.Period {
   switch (periodType) {
     case "daily":
-      return multisig.types.Period.Day;
+      return smartAccount.types.Period.Day;
     case "weekly":
-      return multisig.types.Period.Week;
+      return smartAccount.types.Period.Week;
     case "monthly":
-      return multisig.types.Period.Month;
+      return smartAccount.types.Period.Month;
   }
 }
 
 export interface BuildSpendingLimitUpdateParams {
   userWallet: PublicKey;
   sponsorPublicKey: PublicKey;
-  multisigPda: PublicKey;
+  settingsPda: PublicKey;
   agentPubkey: PublicKey;
-  currentTransactionIndex: number;
-  oldOnchainCreateKey: string | null | undefined;
-  createKeyPublicKey: PublicKey;
+  oldSeed: string | null | undefined;
+  seed: PublicKey;
   tokenMint: PublicKey;
   limitAmount: number;
   decimals: number;
@@ -85,7 +90,7 @@ export interface BuildSpendingLimitUpdateParams {
 }
 
 export interface SpendingLimitUpdateResult {
-  instructions: ReturnType<typeof multisig.instructions.configTransactionCreate>[];
+  instructions: TransactionInstruction[];
   messageV0: ReturnType<TransactionMessage["compileToV0Message"]>;
   tx: VersionedTransaction;
 }
@@ -93,101 +98,48 @@ export interface SpendingLimitUpdateResult {
 export function buildSpendingLimitUpdateTxCore(
   params: BuildSpendingLimitUpdateParams,
 ): SpendingLimitUpdateResult {
-  const allInstructions: ReturnType<typeof multisig.instructions.configTransactionCreate>[] = [];
-  let currentTransactionIndex = params.currentTransactionIndex;
+  const allInstructions: TransactionInstruction[] = [];
 
   // If there's an existing on-chain spending limit, remove it first
-  if (params.oldOnchainCreateKey) {
-    const oldCreateKeyPubkey = new PublicKey(params.oldOnchainCreateKey);
-    const [oldSpendingLimitPda] = multisig.getSpendingLimitPda({
-      multisigPda: params.multisigPda,
-      createKey: oldCreateKeyPubkey,
+  if (params.oldSeed) {
+    const oldSeedPubkey = new PublicKey(params.oldSeed);
+    const [oldSpendingLimitPda] = smartAccount.getSpendingLimitPda({
+      settingsPda: params.settingsPda,
+      seed: oldSeedPubkey,
     });
 
-    const removeIndex = BigInt(currentTransactionIndex + 1);
-
     allInstructions.push(
-      multisig.instructions.configTransactionCreate({
-        multisigPda: params.multisigPda,
-        transactionIndex: removeIndex,
-        creator: params.userWallet,
-        rentPayer: params.sponsorPublicKey,
-        actions: [
-          {
-            __kind: "RemoveSpendingLimit",
-            spendingLimit: oldSpendingLimitPda,
-          },
-        ],
-      }),
-      multisig.instructions.proposalCreate({
-        multisigPda: params.multisigPda,
-        transactionIndex: removeIndex,
-        creator: params.userWallet,
-        rentPayer: params.sponsorPublicKey,
-      }),
-      multisig.instructions.proposalApprove({
-        multisigPda: params.multisigPda,
-        transactionIndex: removeIndex,
-        member: params.userWallet,
-      }),
-      multisig.instructions.configTransactionExecute({
-        multisigPda: params.multisigPda,
-        transactionIndex: removeIndex,
-        member: params.userWallet,
-        rentPayer: params.sponsorPublicKey,
-        spendingLimits: [oldSpendingLimitPda],
+      smartAccount.instructions.removeSpendingLimitAsAuthority({
+        settingsPda: params.settingsPda,
+        settingsAuthority: params.userWallet,
+        spendingLimit: oldSpendingLimitPda,
+        rentCollector: params.sponsorPublicKey,
       }),
     );
-
-    currentTransactionIndex++;
   }
 
   // Add new spending limit
-  const [spendingLimitPda] = multisig.getSpendingLimitPda({
-    multisigPda: params.multisigPda,
-    createKey: params.createKeyPublicKey,
+  const [spendingLimitPda] = smartAccount.getSpendingLimitPda({
+    settingsPda: params.settingsPda,
+    seed: params.seed,
   });
 
   const period = mapPeriod(params.periodType);
-  const amount = new BN(Math.round(params.limitAmount * 10 ** params.decimals));
-  const addIndex = BigInt(currentTransactionIndex + 1);
+  const amount = BigInt(Math.round(params.limitAmount * 10 ** params.decimals));
 
   allInstructions.push(
-    multisig.instructions.configTransactionCreate({
-      multisigPda: params.multisigPda,
-      transactionIndex: addIndex,
-      creator: params.userWallet,
+    smartAccount.instructions.addSpendingLimitAsAuthority({
+      settingsPda: params.settingsPda,
+      settingsAuthority: params.userWallet,
+      spendingLimit: spendingLimitPda,
       rentPayer: params.sponsorPublicKey,
-      actions: [
-        {
-          __kind: "AddSpendingLimit",
-          createKey: params.createKeyPublicKey,
-          vaultIndex: 0,
-          mint: params.tokenMint,
-          amount,
-          period,
-          members: [params.agentPubkey],
-          destinations: [],
-        },
-      ],
-    }),
-    multisig.instructions.proposalCreate({
-      multisigPda: params.multisigPda,
-      transactionIndex: addIndex,
-      creator: params.userWallet,
-      rentPayer: params.sponsorPublicKey,
-    }),
-    multisig.instructions.proposalApprove({
-      multisigPda: params.multisigPda,
-      transactionIndex: addIndex,
-      member: params.userWallet,
-    }),
-    multisig.instructions.configTransactionExecute({
-      multisigPda: params.multisigPda,
-      transactionIndex: addIndex,
-      member: params.userWallet,
-      rentPayer: params.sponsorPublicKey,
-      spendingLimits: [spendingLimitPda],
+      seed: params.seed,
+      accountIndex: 0,
+      mint: params.tokenMint,
+      amount,
+      period,
+      signers: [params.agentPubkey],
+      destinations: [],
     }),
   );
 
@@ -209,14 +161,13 @@ export function buildSpendingLimitUpdateTxCore(
 export interface BuildRemoveMemberParams {
   userWallet: PublicKey;
   sponsorPublicKey: PublicKey;
-  multisigPda: PublicKey;
+  settingsPda: PublicKey;
   memberToRemove: PublicKey;
-  currentTransactionIndex: number;
   blockhash: string;
 }
 
 export interface RemoveMemberResult {
-  instructions: ReturnType<typeof multisig.instructions.configTransactionCreate>[];
+  instructions: TransactionInstruction[];
   messageV0: ReturnType<TransactionMessage["compileToV0Message"]>;
   tx: VersionedTransaction;
 }
@@ -224,40 +175,13 @@ export interface RemoveMemberResult {
 export function buildRemoveMemberTxCore(
   params: BuildRemoveMemberParams,
 ): RemoveMemberResult {
-  const newTransactionIndex = BigInt(params.currentTransactionIndex + 1);
-
-  const removeIx = multisig.instructions.configTransactionCreate({
-    multisigPda: params.multisigPda,
-    transactionIndex: newTransactionIndex,
-    creator: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-    actions: [
-      { __kind: "RemoveMember", oldMember: params.memberToRemove },
-    ],
+  const removeIx = smartAccount.instructions.removeSignerAsAuthority({
+    settingsPda: params.settingsPda,
+    settingsAuthority: params.userWallet,
+    oldSigner: params.memberToRemove,
   });
 
-  const proposalIx = multisig.instructions.proposalCreate({
-    multisigPda: params.multisigPda,
-    transactionIndex: newTransactionIndex,
-    creator: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-  });
-
-  const approveIx = multisig.instructions.proposalApprove({
-    multisigPda: params.multisigPda,
-    transactionIndex: newTransactionIndex,
-    member: params.userWallet,
-  });
-
-  const executeIx = multisig.instructions.configTransactionExecute({
-    multisigPda: params.multisigPda,
-    transactionIndex: newTransactionIndex,
-    member: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-    spendingLimits: [],
-  });
-
-  const instructions = [removeIx, proposalIx, approveIx, executeIx];
+  const instructions = [removeIx];
 
   const messageV0 = new TransactionMessage({
     payerKey: params.sponsorPublicKey,
@@ -277,10 +201,9 @@ export function buildRemoveMemberTxCore(
 export interface BuildAgentActivationParams {
   userWallet: PublicKey;
   sponsorPublicKey: PublicKey;
-  multisigPda: PublicKey;
+  settingsPda: PublicKey;
   agentPubkey: PublicKey;
-  currentTransactionIndex: number;
-  createKeyPublicKey: PublicKey;
+  seed: PublicKey;
   tokenMint: PublicKey;
   limitAmount: number;
   decimals: number;
@@ -289,7 +212,7 @@ export interface BuildAgentActivationParams {
 }
 
 export interface AgentActivationResult {
-  instructions: ReturnType<typeof multisig.instructions.configTransactionCreate>[];
+  instructions: TransactionInstruction[];
   messageV0: ReturnType<TransactionMessage["compileToV0Message"]>;
   tx: VersionedTransaction;
 }
@@ -297,66 +220,41 @@ export interface AgentActivationResult {
 export function buildAgentActivationTxCore(
   params: BuildAgentActivationParams,
 ): AgentActivationResult {
-  const transactionIndex = BigInt(params.currentTransactionIndex + 1);
-
-  const [spendingLimitPda] = multisig.getSpendingLimitPda({
-    multisigPda: params.multisigPda,
-    createKey: params.createKeyPublicKey,
+  const [spendingLimitPda] = smartAccount.getSpendingLimitPda({
+    settingsPda: params.settingsPda,
+    seed: params.seed,
   });
 
   const period = mapPeriod(params.periodType);
-  const amount = new BN(Math.round(params.limitAmount * 10 ** params.decimals));
+  const amount = BigInt(Math.round(params.limitAmount * 10 ** params.decimals));
 
-  const configIx = multisig.instructions.configTransactionCreate({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    creator: params.userWallet,
+  const addSignerIx = smartAccount.instructions.addSignerAsAuthority({
+    settingsPda: params.settingsPda,
+    settingsAuthority: params.userWallet,
     rentPayer: params.sponsorPublicKey,
-    actions: [
-      {
-        __kind: "AddMember",
-        newMember: {
-          key: params.agentPubkey,
-          permissions: multisig.types.Permissions.fromPermissions([
-            multisig.types.Permission.Initiate,
-          ]),
-        },
-      },
-      {
-        __kind: "AddSpendingLimit",
-        createKey: params.createKeyPublicKey,
-        vaultIndex: 0,
-        mint: params.tokenMint,
-        amount,
-        period,
-        members: [params.agentPubkey],
-        destinations: [],
-      },
-    ],
+    newSigner: {
+      key: params.agentPubkey,
+      permissions: smartAccount.types.Permissions.fromPermissions([
+        smartAccount.types.Permission.Initiate,
+      ]),
+    },
   });
 
-  const proposalIx = multisig.instructions.proposalCreate({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    creator: params.userWallet,
+  const addSpendingLimitIx = smartAccount.instructions.addSpendingLimitAsAuthority({
+    settingsPda: params.settingsPda,
+    settingsAuthority: params.userWallet,
+    spendingLimit: spendingLimitPda,
     rentPayer: params.sponsorPublicKey,
+    seed: params.seed,
+    accountIndex: 0,
+    mint: params.tokenMint,
+    amount,
+    period,
+    signers: [params.agentPubkey],
+    destinations: [],
   });
 
-  const approveIx = multisig.instructions.proposalApprove({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    member: params.userWallet,
-  });
-
-  const executeIx = multisig.instructions.configTransactionExecute({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    member: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-    spendingLimits: [spendingLimitPda],
-  });
-
-  const instructions = [configIx, proposalIx, approveIx, executeIx];
+  const instructions = [addSignerIx, addSpendingLimitIx];
 
   const messageV0 = new TransactionMessage({
     payerKey: params.sponsorPublicKey,
@@ -376,15 +274,14 @@ export function buildAgentActivationTxCore(
 export interface BuildAgentRevocationParams {
   userWallet: PublicKey;
   sponsorPublicKey: PublicKey;
-  multisigPda: PublicKey;
+  settingsPda: PublicKey;
   agentPubkey: PublicKey;
-  currentTransactionIndex: number;
-  onchainCreateKey: string | null | undefined;
+  oldSeed: string | null | undefined;
   blockhash: string;
 }
 
 export interface AgentRevocationResult {
-  instructions: ReturnType<typeof multisig.instructions.configTransactionCreate>[];
+  instructions: TransactionInstruction[];
   messageV0: ReturnType<TransactionMessage["compileToV0Message"]>;
   tx: VersionedTransaction;
 }
@@ -392,58 +289,32 @@ export interface AgentRevocationResult {
 export function buildAgentRevocationTxCore(
   params: BuildAgentRevocationParams,
 ): AgentRevocationResult {
-  const transactionIndex = BigInt(params.currentTransactionIndex + 1);
+  const instructions: TransactionInstruction[] = [];
 
-  const actions: Parameters<
-    typeof multisig.instructions.configTransactionCreate
-  >[0]["actions"] = [
-    { __kind: "RemoveMember", oldMember: params.agentPubkey },
-  ];
+  instructions.push(
+    smartAccount.instructions.removeSignerAsAuthority({
+      settingsPda: params.settingsPda,
+      settingsAuthority: params.userWallet,
+      oldSigner: params.agentPubkey,
+    }),
+  );
 
-  let spendingLimitPda: PublicKey | undefined;
-
-  if (params.onchainCreateKey) {
-    const onchainCreateKeyPubkey = new PublicKey(params.onchainCreateKey);
-    [spendingLimitPda] = multisig.getSpendingLimitPda({
-      multisigPda: params.multisigPda,
-      createKey: onchainCreateKeyPubkey,
+  if (params.oldSeed) {
+    const seedPubkey = new PublicKey(params.oldSeed);
+    const [spendingLimitPda] = smartAccount.getSpendingLimitPda({
+      settingsPda: params.settingsPda,
+      seed: seedPubkey,
     });
-    actions.push({
-      __kind: "RemoveSpendingLimit",
-      spendingLimit: spendingLimitPda,
-    });
+
+    instructions.push(
+      smartAccount.instructions.removeSpendingLimitAsAuthority({
+        settingsPda: params.settingsPda,
+        settingsAuthority: params.userWallet,
+        spendingLimit: spendingLimitPda,
+        rentCollector: params.sponsorPublicKey,
+      }),
+    );
   }
-
-  const configIx = multisig.instructions.configTransactionCreate({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    creator: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-    actions,
-  });
-
-  const proposalIx = multisig.instructions.proposalCreate({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    creator: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-  });
-
-  const approveIx = multisig.instructions.proposalApprove({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    member: params.userWallet,
-  });
-
-  const executeIx = multisig.instructions.configTransactionExecute({
-    multisigPda: params.multisigPda,
-    transactionIndex,
-    member: params.userWallet,
-    rentPayer: params.sponsorPublicKey,
-    spendingLimits: spendingLimitPda ? [spendingLimitPda] : [],
-  });
-
-  const instructions = [configIx, proposalIx, approveIx, executeIx];
 
   const messageV0 = new TransactionMessage({
     payerKey: params.sponsorPublicKey,

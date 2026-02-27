@@ -100,7 +100,7 @@ export const updateSpendingLimit = mutation({
     if (!agent) throw new Error("Agent not found");
 
     // Auth + workspace membership check
-    await requireWorkspaceMember(ctx, agent.workspaceId);
+    const user = await requireWorkspaceMember(ctx, agent.workspaceId);
 
     // Find existing spending limit for this agent
     const existingLimits = await ctx.db
@@ -139,7 +139,10 @@ export const updateSpendingLimit = mutation({
     await ctx.db.insert("activity_log", {
       workspaceId: agent.workspaceId,
       agentId: args.agentId,
-      action: "limit_updated",
+      actorType: "human",
+      actorLabel: user.email ?? user.walletAddress,
+      category: "config",
+      action: "spending_limit_updated",
       timestamp: Date.now(),
     });
 
@@ -176,7 +179,10 @@ export const confirmAgentActivation = mutation({
     await ctx.db.insert("activity_log", {
       workspaceId: agent.workspaceId,
       agentId: args.agentId,
-      action: "agent_activated_onchain",
+      actorType: "human",
+      actorLabel: identity.email ?? "Unknown",
+      category: "agent_lifecycle",
+      action: "agent_activated",
       txSignature: args.txSignature,
       timestamp: Date.now(),
     });
@@ -237,6 +243,9 @@ export const revoke = mutation({
     await ctx.db.insert("activity_log", {
       workspaceId: agent.workspaceId,
       agentId: args.agentId,
+      actorType: "human",
+      actorLabel: identity.email ?? "Unknown",
+      category: "agent_lifecycle",
       action: "agent_revoked",
       timestamp: now,
     });
